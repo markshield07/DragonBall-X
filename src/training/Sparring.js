@@ -303,7 +303,7 @@ export class Sparring {
       case 'idle':
       case 'approach': {
         pose(guardL.clone().setY(1.42 + breathe), guardR.clone().setY(1.36 + breathe));
-        const want = 1.25;
+        const want = this.wantDist ?? 1.25;
         if (dist > want + 0.15) pos.addScaledVector(toP, Math.min(dist - want, 2.4 * dt));
         else if (dist < want - 0.3) pos.addScaledVector(toP, -1.5 * dt);
         // Circle-strafe a little.
@@ -410,7 +410,8 @@ export class Sparring {
     this.bar.visible = !this.kd.grounded && this.state !== 'down';
     if (this.powerFx) this.powerFx.update(dt, this.group.position, this.state === 'powerUp' ? 0.8 * g.visualIntensity : 0, this.shadow ? 0x9a6aff : 0xdcc9a8);
     const r = Math.hypot(pos.x, pos.z);
-    if (r > 25) { pos.x *= 25 / r; pos.z *= 25 / r; }
+    const lim = this.arenaRadius ?? 25;
+    if (r > lim) { pos.x *= lim / r; pos.z *= lim / r; }
     this.aura.update(dt, g.renderer.camera, g.visualIntensity * 0.6);
   }
 

@@ -287,7 +287,9 @@ export class GameMenu {
     row('Location', [
       { id: 'arena', name: 'Training Grounds', selected: t.location === 'arena' },
       { id: 'timechamber', name: 'Time Chamber', selected: t.location === 'timechamber', enabled: tc, sub: tc ? `Day ${t.chamberDays()} · 3x XP` : `PL ${formatNumber(TIME_CHAMBER_UNLOCK.powerLevel)}` },
-    ], (id) => g.fadeTo(() => t.setLocation(id)));
+      { id: 'kali', name: "King Kali's", selected: t.location === 'kali', sub: '2x XP' },
+      { id: 'zui', name: 'Planet Zui', selected: t.location === 'zui', sub: 'Brawl' },
+    ], (id) => g.fadeTo(() => { t.setLocation(id); g.resetPlayerPosition(); }));
     const lv = GRAVITY_LEVELS.find((l) => l.g === t.gravity);
     if (lv?.recommended && p.basePowerLevel() < lv.recommended) {
       ui.text(`Warning: ${lv.g}x gravity strains you below Power Level ${formatNumber(lv.recommended)}.`, a.x, y + 30, { size: 24, color: COLORS.red, weight: 'normal' });
@@ -401,6 +403,28 @@ export class GameMenu {
 }
 
 // ---------------------------------------------------------------------------
+// Shown when you walk through the gate on the training grounds.
+export class PortalMenu {
+  constructor(game) {
+    this.game = game;
+    this.panel = new Panel({ width: 1.2, height: 0.75, name: 'portal', depthTest: false });
+    this.panel.setDraw((ui) => this.draw(ui));
+  }
+
+  draw(ui) {
+    const g = this.game;
+    ui.background(COLORS.bg, '#b06aff');
+    ui.text('THE PORTAL', ui.W / 2, 110, { size: 80, align: 'center', color: '#d8b0ff', stroke: '#000' });
+    ui.text('Where do you want to go?', ui.W / 2, 175, { size: 34, align: 'center', color: COLORS.muted });
+    const w = (ui.W - 150) / 2;
+    ui.button('portal-kali', "King Kali's Planet", 50, 220, w, 150, { size: 38, color: '#a8761a', onClick: () => g.travel('kali') });
+    ui.wrap('A tiny planet in the Other World. Heavy gravity: training here gives 2x XP.', 60, 410, w - 20, { size: 26 });
+    ui.button('portal-zui', 'Planet Zui', 100 + w, 220, w, 150, { size: 38, color: '#6a2aa8', onClick: () => g.travel('zui') });
+    ui.wrap('A battle planet. Crowds of warriors attack, most far weaker than you.', 110 + w, 410, w - 20, { size: 26 });
+    ui.button('portal-stay', 'Stay here', ui.W / 2 - 180, ui.H - 120, 360, 90, { size: 34, onClick: () => g.closePortalMenu() });
+  }
+}
+
 export class ResultScreen {
   constructor(game) {
     this.game = game;

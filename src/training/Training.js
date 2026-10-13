@@ -8,6 +8,9 @@ import { FORMS } from '../progression/forms.js';
 import { segmentSphere } from '../combat/Combat.js';
 import { Sparring, SPAR_LEVELS } from './Sparring.js';
 import { TimeChamber } from '../world/TimeChamber.js';
+import { KaliPlanet, ZuiPlanet } from '../world/Planets.js';
+import { setGroundOverride } from '../world/terrain.js';
+import { Horde } from './Horde.js';
 import {
   GRAVITY_LEVELS, TIME_CHAMBER_HOURS_PER_SECOND, TIME_CHAMBER_XP, TIME_CHAMBER_MILESTONES, STAT_KEYS,
 } from '../progression/Progression.js';
@@ -288,6 +291,10 @@ export class Training {
     this.sessionXp = 0;
     this.sparring = new Sparring(game);
     this.chamber = new TimeChamber(game.renderer.scene);
+    this.kali = new KaliPlanet(game.renderer.scene);
+    this.zui = new ZuiPlanet(game.renderer.scene);
+    this.horde = new Horde(game);
+    this.lastGateZ = 0;
     this.location = 'arena';
     this.strainTimer = 0;
     this.streakTimer = 0;
@@ -313,9 +320,11 @@ export class Training {
   // Gravity felt right now: only while training.
   get activeGravity() { return this.enabled && this.game.state === 'training' ? this.gravity : 1; }
   get inChamber() { return this.location === 'timechamber'; }
+  // The planet you're on (King Kali's or Zui), or null at home / in the chamber.
+  get realm() { return this.location === 'kali' ? this.kali : this.location === 'zui' ? this.zui : null; }
   get xpMult() {
     const g = this.activeGravity;
-    return (g === 1 ? 1 : 1 + Math.log10(g) * 1.5) * (this.inChamber ? TIME_CHAMBER_XP : 1);
+    return (g === 1 ? 1 : 1 + Math.log10(g) * 1.5) * (this.inChamber ? TIME_CHAMBER_XP : 1) * (this.location === 'kali' ? 2 : 1);
   }
 
   setEnabled(v) {
@@ -351,15 +360,29 @@ export class Training {
   // 'arena' (training grounds) or 'timechamber'. remember = store as preference.
   setLocation(loc, announce = true, remember = true) {
     if (loc === 'timechamber' && !this.game.progress.data.timeChamber.unlocked) loc = 'arena';
+    if (!['arena', 'timechamber', 'kali', 'zui'].includes(loc)) loc = 'arena';
     if (remember) this.prefs.location = loc;
     const changed = loc !== this.location;
+    const wasZui = this.location === 'zui';
     this.location = loc;
-    this.chamber.setActive(loc === 'timechamber', this.game.arena);
+    // Leave any planet first (it restores the outdoor world), then the
+    // chamber, then arrive on the new planet (it hides the world again).
+    const arena = this.game.arena;
+    for (const pl of [this.kali, this.zui]) if (pl.id !== loc) pl.setActive(false, arena);
+    this.chamber.setActive(loc === 'timechamber', arena);
+    this.realm?.setActive(true, arena);
+    setGroundOverride(this.realm ? this.realm.height : null);
+    if (loc === 'zui' || wasZui) {
+      this.horde.setActive(loc === 'zui' && this.enabled);
+      if (this.enabled) this.setActivity(this.activity, false);
+    }
     if (changed && this.activity === 'spar' && this.sparring.group.visible) this.sparring.setLevel(this.prefs.difficulty, this.inChamber);
     if (announce && changed) {
-      bus.emit('hud:message', loc === 'timechamber'
-        ? { text: 'Hyperbolic Time Chamber: 3x XP. A day passes every 24 seconds.', color: '#ffffff', duration: 3.5 }
-        : { text: 'Back on the training grounds', color: '#aab3d6' });
+      bus.emit('hud:message', {
+        timechamber: { text: 'Hyperbolic Time Chamber: 3x XP. A day passes every 24 seconds.', color: '#ffffff', duration: 3.5 },
+        kali: { text: 'King Kali\'s planet: 10x gravity, 2x XP', color: '#ffd36a', duration: 3.5 },
+        zui: { text: 'Planet Zui: warriors are coming for you!', color: '#d08aff', duration: 3.5 },
+      }[loc] || { text: 'Back on the training grounds', color: '#aab3d6' });
     }
     this.sign.dirty = true;
   }
@@ -368,10 +391,14 @@ export class Training {
     if (!ACTIVITIES.some((a) => a.id === id)) id = 'punch';
     this.activity = id;
     this.sessionXp = 0;
-    this.dummy.setVisible(id === 'punch' || id === 'transform');
-    this.kiTargets.setActive(id === 'ki');
-    this.speed.setActive(id === 'speed');
-    this.bot.setActive(id === 'defense');
+    // On Zui the fight comes to you: no training props.
+    const zui = this.location === 'zui';
+    if (zui) this.sign.hide(); else if (this.enabled) this.sign.show();
+    this.dummy.setVisible(!zui && (id === 'punch' || id === 'transform'));
+    this.kiTargets.setActive(!zui && id === 'ki');
+    this.speed.setActive(!zui && id === 'speed');
+    this.bot.setActive(!zui && id === 'defense');
+    if (zui) { this.sparring.setActive(false); this.sign.dirty = true; return; }
     if (id === 'spar') {
       const sp = this.sparring;
       if (!sp.avatar || sp.avatarStale || sp.shadow !== this.inChamber || sp.level.id !== this.prefs.difficulty) {
@@ -391,6 +418,8 @@ export class Training {
   // dt: real time. enemyDt: slowed by slow motion (enemies only).
   update(dt, enemyDt = dt) {
     this.chamber.update(dt);
+    this.kali.update(dt);
+    this.zui.update(dt);
     const g = this.game;
     g.arena.gravity = this.enabled && g.state === 'training' && this.gravity > 1 ? Math.min(1, 0.4 + Math.log10(this.gravity) * 0.3) : 0;
     if (!this.enabled) return;
@@ -399,6 +428,8 @@ export class Training {
     this.speed.update(dt);
     this.bot.update(enemyDt);
     this.sparring.update(enemyDt);
+    this.horde.update(dt, enemyDt);
+    if (g.state === 'training' && !g.menuOpen) this.updatePortals(dt);
     if (g.state === 'training' && !g.menuOpen) {
       this.updateGravity(dt);
       this.updateChamber(dt);
@@ -413,6 +444,29 @@ export class Training {
       if (this.signTimer <= 0) { this.signTimer = 0.4; this.sign.dirty = true; }
     }
     this.sign.update();
+  }
+
+  // Walking through the gate on the training grounds offers the planets;
+  // the glowing ring behind you on a planet takes you home.
+  updatePortals(dt) {
+    const g = this.game;
+    const head = g.player.headWorld;
+    if (this.traveling) return;
+    const realm = this.realm;
+    if (realm) {
+      if (this.location === 'kali') this.kali.updateNpc(dt, head, (text) => bus.emit('hud:message', { text, color: '#ffd36a', duration: 4.5 }));
+      const p = realm.portalPos;
+      if (Math.hypot(head.x - p.x, head.z - p.z) < 1.6) {
+        this.traveling = true;
+        g.audio.whoosh?.();
+        g.fadeTo(() => { this.setLocation('arena'); g.resetPlayerPosition(); this.traveling = false; });
+      }
+      return;
+    }
+    if (this.location !== 'arena') return;
+    const z = head.z;
+    if (Math.abs(head.x) < 3.4 && this.lastGateZ > -40 && z <= -40 && head.y < 11) g.openPortalMenu();
+    this.lastGateZ = z;
   }
 
   // Heavy gravity: falling pressure streaks, and if you are below the

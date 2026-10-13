@@ -108,8 +108,12 @@ export class Mirror {
   }
 
   update(dt) {
-    if (!this.avatar) return;
     const g = this.game;
+    // The mirror belongs to the training grounds, not the other planets.
+    const away = !!g.training?.realm;
+    this.group.visible = !away;
+    this.reflect.visible = !away;
+    if (!this.avatar || away) return;
     const head = g.player.headWorld;
     const b = this.roomBounds;
     const inFront = head.x > this.planeX + 0.2 || head.z < b.zMin || head.z > b.zMax;

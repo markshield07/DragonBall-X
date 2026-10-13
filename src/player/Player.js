@@ -224,7 +224,13 @@ export class Player {
   }
 
   // Free roaming outside boss fights; a boss keeps you near its arena.
-  roamRadius(bossRadius) { return this.game.state === 'boss' ? bossRadius : WORLD_RADIUS - 60; }
+  roamRadius(bossRadius) {
+    if (this.game.state === 'boss') return bossRadius;
+    // Small planets have their own edge (King Kali's is tiny).
+    const realm = this.game.training?.realm;
+    if (realm) return this.flying ? realm.flyRadius : realm.radius;
+    return WORLD_RADIUS - 60;
+  }
 
   setAltitude(a) {
     const seated = this.game.isXR && this.settings.seated ? SEATED_OFFSET : 0;

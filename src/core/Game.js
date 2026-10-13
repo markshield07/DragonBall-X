@@ -33,7 +33,7 @@ import { audio } from '../audio/Audio.js';
 import { HUD } from '../ui/HUD.js';
 import { Banner } from '../ui/Banner.js';
 import { UIManager } from '../ui/UIManager.js';
-import { MainMenu, CharacterCreator, GameMenu, ResultScreen } from '../ui/Menus.js';
+import { MainMenu, CharacterCreator, GameMenu, ResultScreen, PortalMenu } from '../ui/Menus.js';
 
 const _v = new THREE.Vector3();
 const _q = new THREE.Quaternion();
@@ -92,7 +92,8 @@ export class Game {
     this.creator = new CharacterCreator(this);
     this.gameMenu = new GameMenu(this);
     this.result = new ResultScreen(this);
-    for (const m of [this.mainMenu, this.creator, this.gameMenu, this.result]) {
+    this.portalMenu = new PortalMenu(this);
+    for (const m of [this.mainMenu, this.creator, this.gameMenu, this.result, this.portalMenu]) {
       this.renderer.scene.add(m.panel.mesh);
       this.ui.add(m.panel);
     }
@@ -291,7 +292,7 @@ export class Game {
   }
 
   hideAllMenus() {
-    for (const m of [this.mainMenu, this.creator, this.gameMenu, this.result]) m.panel.hide();
+    for (const m of [this.mainMenu, this.creator, this.gameMenu, this.result, this.portalMenu]) m.panel.hide();
   }
 
   // ---- State transitions ------------------------------------------------------------
@@ -500,9 +501,40 @@ export class Game {
     this.updatePointerMode();
   }
 
+  // Walking through the gate: pick a planet (or stay).
+  openPortalMenu() {
+    if (this.menuOpen) return;
+    this.menuOpen = true;
+    this.portalMenu.panel.dirty = true;
+    this.portalMenu.panel.show();
+    this.placeInFront(this.portalMenu.panel.mesh, 1.4, 0, -0.05);
+    this.updatePointerMode();
+  }
+
+  closePortalMenu() {
+    this.menuOpen = false;
+    this.portalMenu.panel.hide();
+    // Step back out of the gate so it doesn't open again straight away.
+    if (this.player.rig.position.z < -38) this.player.rig.position.z = -37;
+    this.updatePointerMode();
+  }
+
+  travel(id) {
+    this.menuOpen = false;
+    this.portalMenu.panel.hide();
+    this.combat.clearProjectiles();
+    this.audio.whoosh?.();
+    this.fadeTo(() => {
+      this.training.setLocation(id);
+      this.resetPlayerPosition();
+    });
+    this.updatePointerMode();
+  }
+
   closeGameMenu() {
     this.menuOpen = false;
     this.gameMenu.panel.hide();
+    this.portalMenu.panel.hide();
     if (this.gameMenu.fromMain) {
       this.mainMenu.panel.show();
       this.placeInFront(this.mainMenu.panel.mesh, 1.6, 0, -0.05);

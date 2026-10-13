@@ -99,7 +99,12 @@ const HEIGHTS = {
 };
 
 // Ground height anywhere in the world.
+// Other planets (King Kali's, Zui) replace the ground while you're there.
+let groundOverride = null;
+export function setGroundOverride(fn) { groundOverride = fn; }
+
 export function terrainHeight(x, z) {
+  if (groundOverride) return groundOverride(x, z);
   const r = Math.hypot(x, z);
   if (r < FLAT_RADIUS) return 0;
   const hub = hubHeight(x, z, r);
