@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { toonUnique, addOutline, glowMaterial, softCircleTexture } from '../render/toon.js';
-import { SKIN_TONES, OUTFIT_COLORS } from '../character/options.js';
+import { SKIN_TONES, paletteColor, buildOf } from '../character/options.js';
 import { damp } from '../core/math.js';
 
 const _v = new THREE.Vector3();
@@ -21,33 +21,38 @@ export class Hands {
       g.name = `hand-${side}`;
       const s = side === 'left' ? -1 : 1;
       // Fist
-      const fist = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.085, 0.1, 1, 1, 1), this.skinMat);
-      fist.geometry = roundedBox(0.085, 0.08, 0.1);
+      const fist = new THREE.Mesh(roundedBox(0.092, 0.086, 0.106), this.skinMat);
       fist.position.set(0, 0, -0.01);
       addOutline(fist, 0.06);
       // Knuckle ridge
       const knuckles = new THREE.Mesh(new THREE.CapsuleGeometry(0.018, 0.06, 2, 6), this.skinMat);
       knuckles.rotation.z = Math.PI / 2;
       knuckles.position.set(0, 0.01, -0.06);
+      // Hand wrap across the palm and knuckles (Rokan's fighting wraps)
+      const handWrap = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.052, 0.032, 12), this.bandMat);
+      handWrap.rotation.x = Math.PI / 2;
+      handWrap.scale.set(1.0, 1, 0.95);
+      handWrap.position.set(0, -0.002, -0.022);
       // Thumb
       const thumb = new THREE.Mesh(new THREE.CapsuleGeometry(0.014, 0.04, 2, 6), this.skinMat);
       thumb.position.set(-0.04 * s, -0.015, -0.035);
       thumb.rotation.set(Math.PI / 2, 0, 0.6 * s);
       // Forearm: extends back (+Z) and slightly down from the grip.
       const arm = new THREE.Group();
-      const forearm = new THREE.Mesh(new THREE.CapsuleGeometry(0.038, 0.24, 3, 8), this.skinMat);
+      const forearm = new THREE.Mesh(new THREE.CapsuleGeometry(0.042, 0.24, 3, 8), this.skinMat);
       forearm.rotation.x = Math.PI / 2;
       forearm.position.z = 0.17;
       addOutline(forearm, 0.06);
-      const band = new THREE.Mesh(new THREE.CylinderGeometry(0.047, 0.047, 0.07, 12), this.bandMat);
+      // Wrist wraps: two stacked bands
+      const band = new THREE.Mesh(new THREE.CylinderGeometry(0.049, 0.047, 0.075, 12), this.bandMat);
       band.rotation.x = Math.PI / 2;
-      band.position.z = 0.075;
+      band.position.z = 0.07;
       const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.058, 0.12, 12, 1, true), this.sleeveMat);
       sleeve.rotation.x = Math.PI / 2;
       sleeve.position.z = 0.33;
       arm.add(forearm, band, sleeve);
       arm.rotation.x = -0.32; // forearm angles down toward the elbow
-      g.add(fist, knuckles, thumb, arm);
+      g.add(fist, knuckles, handWrap, thumb, arm);
 
       // Ki glow around the fist
       const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: softCircleTexture(), color: 0x9fdcff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 }));
@@ -66,7 +71,7 @@ export class Hands {
 
       rig.add(g);
       this.hands[side] = {
-        side, group: g, glow, shell, sheath,
+        side, group: g, glow, shell, sheath, arm, sleeve, fist,
         prevLocal: new THREE.Vector3(), localPos: new THREE.Vector3(), vel: new THREE.Vector3(), velLocal: new THREE.Vector3(),
         worldPos: new THREE.Vector3(), speed: 0, first: true, glowLevel: 0, swingArmed: true,
         color: new THREE.Color(0x9fdcff),
@@ -76,9 +81,17 @@ export class Hands {
 
   applyCharacter(character) {
     this.skinMat.color.setHex(SKIN_TONES[character.skin % SKIN_TONES.length].color);
-    const oc = OUTFIT_COLORS[character.outfitColor % OUTFIT_COLORS.length];
-    this.bandMat.color.setHex(character.outfit === 'armor' ? 0xf0f0f0 : oc.secondary);
-    this.sleeveMat.color.setHex(character.outfit === 'tank' ? SKIN_TONES[character.skin % SKIN_TONES.length].color : oc.primary);
+    this.bandMat.color.setHex(paletteColor(character.gloveColor));
+    this.sleeveMat.color.setHex(paletteColor(character.armorColor));
+    // Titan armor and the tank top leave the forearms bare; the build
+    // preset thickens or slims the first-person forearms and fists.
+    const sleeve = character.outfit === 'gi' || character.outfit === 'jacket';
+    const k = buildOf(character).limb * (character.body === 'female' ? 0.9 : 1);
+    for (const h of Object.values(this.hands)) {
+      h.sleeve.visible = sleeve;
+      h.arm.scale.set(k, k, 1);
+      h.fist.scale.setScalar(0.92 + 0.08 * k);
+    }
   }
 
   setVisible(v) {

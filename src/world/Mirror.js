@@ -118,7 +118,7 @@ export class Mirror {
     const root = this.avatar.root;
     const eye = Math.max(0.9, head.y);
     const scale = THREE.MathUtils.clamp(eye / 1.66, 0.8, 1.15);
-    root.scale.setScalar(scale * (this.avatar.character.body === 'female' ? 0.96 : 1));
+    root.scale.setScalar(scale);
     root.position.set(head.x, 0, head.z).sub(_v.set(Math.sin(yaw), 0, Math.cos(yaw)).multiplyScalar(-0.06));
     root.rotation.set(0, yaw + Math.PI, 0); // avatar faces +Z, camera looks down -Z
     root.updateMatrixWorld();

@@ -23,7 +23,7 @@ Open <http://localhost:5173> and click **Play on Desktop**.
 
 ## The Phase 1 game loop
 
-1. **Main menu → New Warrior → character creator.** Pick name, body, skin, hairstyle (6 original anime styles), hair and eye colour, outfit (4) and outfit colour. Use *Preview* to see your Super Saiyan look. Your character saves automatically.
+1. **Main menu → New Warrior → character creator.** Every warrior starts from **Rokan, the Primal Titan** (see below) and you customise him across four tabs: Body (build, frame, 10 skin tones), Face (eye colour, expression, brows, scars), Hair (8 styles, 7 colours) and Outfit (4 styles, 5 recolourable sections). Use *Preview* to see your Super Saiyan look. Your character saves automatically.
 2. **Train** (menu → Training): each activity levels one stat, and the lowest stat gets +50% XP so varied training pays.
    - **Punching** (Strength): punch the dummy. Harder punches and alternating-hand combos give more XP; finishers crack the ground; break the dummy for a bonus.
    - **Ki** (Ki): shoot floating targets. Charged blasts and far targets give more.
@@ -36,6 +36,30 @@ Open <http://localhost:5173> and click **Play on Desktop**.
 6. **Win** for XP and the next milestone (Gravity Chamber and Lord Veyron, Phase 2). **Lose** and you get a tip about what to train next; nothing is lost.
 
 The **mirror** to your left (a little house with a golden frame) shows your character copying your head and hand movement, including hair, aura and transformation.
+
+## Rokan, the base character
+
+Rokan is the one base model every player customises; there are no separate player characters. Out of the box he is a muscular anime brawler with dark skin, a thick wild black mane, fierce eyes, a strong jaw, red-and-black Titan battle armour, heavy black boots with gold cuffs and crimson wrist wraps.
+
+- **One rig** (`src/character/Avatar.js`): the body is built from procedural parts, then merged into one mesh per material (skin, undersuit, armour, wraps, boots, belt, trim) which keeps the mirror avatar cheap. The head (face and hair) and the two IK arms stay separate so they can follow your head and hands.
+- **Customisation** (`src/character/options.js`): builds (Lean, Athletic, Muscular, Heavy Muscular) scale the shoulders, chest and limbs of the same rig. Frame (masculine or feminine), 10 skin tones, 8 hairstyles (Titan Mane, Wild, Upright, Short, Layered, Prince with a widow's peak, Swordsman, Ponytail), 7 hair colours, 7 eye colours, 3 expressions, 4 brow shapes and 4 scar options. Outfits are Titan Armour, Training Gi, Battle Jacket and Sleeveless Fighter, and each has five colour sections (armour/chest, undersuit, wraps/gloves, boots, belt/accents) picked from a shared 10-colour palette. The first-person hands use the same skin, wraps and build.
+- **Transformations** (`src/progression/forms.js`) only change hair shape and colour, eye colour, muscle, fur and tail, so every form works on every customisation. Super Saiyan 1 is playable: golden lifted hair, teal eyes, gold aura, same face, skin and outfit. Super Saiyan 2 (sharper spikes, lightning), 3 (very long hair), 4 (black hair, red fur, tail, more muscle) and 5 (electric blue hair and aura) are already described in data and render in the rig; they unlock in later phases.
+- **Brawler feel**: a wide guard stance on the avatar, fists that blaze brighter while powering up, and a second shockwave on heavy punches.
+- Saves from the first prototype are migrated automatically (old hairstyles, colours and outfits map onto the new options).
+
+## The world: mountain plains training zone
+
+`src/world/Arena.js` builds a bright, open anime battlefield, all procedural and cel-shaded:
+
+- **Ground**: one vertex-coloured terrain mesh with two-tone grass, dirt paths, a worn ring around the platform, rocky patches and rolling hills. It is perfectly flat within 34 m of the centre, where you play.
+- **Training zone**: a tiled stone sparring platform (dummy, targets and fights happen here), wooden training posts and a roped training boulder to the right, and the mirror house to the left.
+- **Battle crater**: a cracked crater with broken slabs, impact rims and standing stones on the way to the boss gate, where Raxor lands.
+- **Rock formations**: layered sandstone pillars (some grass-topped), wide mesas, cliffs behind the gate and scattered boulders.
+- **Distance**: two rings of jagged mountains with snow caps, then pale far peaks, a gradient sky with a sun glow, and puffy two-tone clouds.
+- **Ambient life**: drifting wind streaks, dust motes and rocks hovering over the crater, all animated on the GPU.
+- **Performance**: every plain cel-shaded prop (rocks, mountains, slabs, clouds, platform) is merged into a single vertex-coloured mesh per group, so the world costs a handful of draw calls. The full training view measured 63 draw calls in desktop Chromium. Low hides the grass, trees, boulders, wind and dust; High adds a denser grass field and shadows.
+
+**Placeholders still in use**: the characters are procedural low-poly shapes rather than sculpted, rigged models (no skinned mesh, fingers or facial animation), the legs don't animate, and the clouds and mountains are simple primitives. All of these sit behind the same interfaces (`Avatar`, `Arena`), so real models can replace them later without touching gameplay.
 
 ## Controls
 
@@ -124,7 +148,7 @@ __xrDevice.controllers.left.updateAxes('thumbstick', 0, -1);   // push left stic
 - Controller tracking drives the virtual hands; laser-pointer menu clicks with the trigger.
 - Motion punches register; trigger fires ki blasts; both grips + A transforms; X opens the menu.
 - Snap turn, smooth locomotion and teleport.
-- Draw calls: about 128 in training and 214 in the boss fight on the Low preset (both eyes counted).
+- Draw calls: about 122 in training and 204 in the boss fight on the Low preset, 216 on High (both eyes counted).
 
 **Not verified, needs real Quest 2 and Quest 3 testing:**
 
@@ -150,14 +174,14 @@ src/
   player/Player.js        health, ki and stamina, locomotion, punching, blasts, blocking
   player/Hands.js         first-person hands and forearms, velocity tracking, hand glow
   player/Comfort.js       movement vignette and fades
-  character/              customization options, procedural hair, avatar body
+  character/              Rokan base model: options, procedural hair, merged avatar rig
   combat/Combat.js        targets, swept punch and projectile collisions, projectiles
   progression/            stats and Power Level, all 6 forms, all 8 attacks
   transform/              the 5-stage transformation experience
   training/               dummy, ki targets, speed orbs, defense bot, activity manager
   boss/Raxor.js           boss catalogue (5 villains) and Raxor's AI
   fx/                     aura shader, particles, lightning, shockwaves, cracks
-  world/                  arena and mirror
+  world/                  mountain-plains arena (terrain, rocks, sky, ambient fx) and mirror
   ui/                     canvas panels, menus, HUD, banners, pointer handling
   audio/Audio.js          procedural WebAudio sound effects
   save/SaveSystem.js      localStorage save and settings

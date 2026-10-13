@@ -18,7 +18,7 @@ import { Transformation } from '../transform/Transformation.js';
 import { Training } from '../training/Training.js';
 import { Raxor } from '../boss/Raxor.js';
 import { Avatar } from '../character/Avatar.js';
-import { defaultCharacter } from '../character/options.js';
+import { defaultCharacter, migrateCharacter } from '../character/options.js';
 import { SaveSystem } from '../save/SaveSystem.js';
 import { loadSettings, GRAPHICS_PRESETS, VISUAL_INTENSITY } from '../settings/Settings.js';
 import { PerformanceMonitor } from '../settings/Performance.js';
@@ -53,7 +53,7 @@ export class Game {
     this.perf = new PerformanceMonitor(this);
 
     const save = SaveSystem.load();
-    this.character = save?.character ? { ...defaultCharacter(), ...save.character } : defaultCharacter();
+    this.character = save?.character ? migrateCharacter(save.character) : defaultCharacter();
     this.progress = new Progression(save?.progress);
 
     this.playerAura = new Aura({ radius: 0.95, height: 2.5, firstPerson: true });
@@ -300,7 +300,7 @@ export class Game {
   continueGame() {
     const save = SaveSystem.load();
     if (save) {
-      this.character = { ...defaultCharacter(), ...save.character };
+      this.character = migrateCharacter(save.character);
       this.progress = new Progression(save.progress);
     }
     this.applyCharacter();
@@ -456,6 +456,11 @@ export class Game {
       this.effects.burst(h.point, transformed ? 0xffcc33 : 0xfff2cc, Math.round(6 + 16 * power), 1.5 + 3 * power, 0.04 + 0.04 * power, 0.35);
       if (power > 0.55 || h.finisher) {
         this.effects.ring(h.point, col, { maxRadius: 0.5 + power, duration: 0.3, vertical: true, normal: h.dir, opacity: 0.6 });
+      }
+      // Heavy hits: a second, wider shockwave and debris sparks (close-range powerhouse feel).
+      if (power > 0.8) {
+        this.effects.ring(h.point, 0xffffff, { maxRadius: 1.4 + power, duration: 0.45, vertical: true, normal: h.dir, opacity: 0.35 });
+        this.effects.burst(h.point, 0xffb04a, 8, 3.5, 0.03, 0.5);
       }
       if (h.finisher) this.banner.push({ title: `${h.combo}-HIT COMBO!`, color: '#ffcc33', duration: 1.0, priority: true });
     });

@@ -236,12 +236,13 @@ export class Transformation {
     // Hands glow
     const handColor = transformed ? 0xffd23a : this.state === 'transforming' ? 0xfff3c0 : 0x9fdcff;
     const baseGlow = transformed ? 0.45 : 0;
-    const chargeGlow = charging ? 0.25 + 0.75 * c : 0;
+    // Brawler feel: fists blaze up quickly while powering up.
+    const chargeGlow = charging ? 0.4 + 0.9 * c : 0;
     const seqGlow = this.state === 'transforming' ? 1.2 : 0;
     for (const side of ['left', 'right']) {
       const fireCharge = p.chargeLevel(side);
       const lvl = Math.max(baseGlow, chargeGlow, seqGlow, fireCharge * (0.6 + 0.04 * kiLv)) * (0.7 + 0.03 * kiLv);
-      g.hands.setGlow(side, lvl, fireCharge > 0.05 && !charging ? 0xffe26a : handColor, transformed ? 1 : charging ? c * 0.6 : 0, transformed ? 0xffd23a : 0x9fdcff, dt);
+      g.hands.setGlow(side, lvl, fireCharge > 0.05 && !charging ? 0xffe26a : handColor, transformed ? 1 : charging ? 0.2 + c * 0.8 : 0, transformed ? 0xffd23a : 0x9fdcff, dt);
       const h = g.hands.hands[side];
       if (h.group.visible && (charging || transformed) && Math.random() < (charging ? 0.4 + c : 0.25) * g.particleBudget) {
         // Energy streams around the arms

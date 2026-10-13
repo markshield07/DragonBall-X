@@ -17,7 +17,7 @@ function getGradient() {
 const cache = new Map();
 
 export function toon(color, opts = {}) {
-  const key = opts.shared === false ? null : `${color}|${opts.emissive || 0}|${opts.side || 0}|${opts.flat || 0}`;
+  const key = opts.shared === false ? null : `${color}|${opts.emissive || 0}|${opts.side || 0}|${opts.flat || 0}|${opts.vertexColors ? 1 : 0}`;
   if (key && cache.has(key)) return cache.get(key);
   const m = new THREE.MeshToonMaterial({
     color,
@@ -25,6 +25,7 @@ export function toon(color, opts = {}) {
     emissive: opts.emissive || 0x000000,
     emissiveIntensity: opts.emissiveIntensity ?? 1,
     side: opts.side ?? THREE.FrontSide,
+    vertexColors: !!opts.vertexColors,
   });
   if (key) cache.set(key, m);
   return m;
@@ -75,4 +76,19 @@ export function softCircleTexture() {
   softTex = new THREE.CanvasTexture(c);
   softTex.colorSpace = THREE.SRGBColorSpace;
   return softTex;
+}
+
+// Outline for merged meshes: back faces pushed out along the vertex normal
+// (works for any geometry, unlike scaling a copy about its origin).
+const extrudeCache = new Map();
+export function outlineExtrudeMaterial(thickness = 0.012) {
+  const key = thickness.toFixed(4);
+  if (extrudeCache.has(key)) return extrudeCache.get(key);
+  const m = new THREE.MeshBasicMaterial({ color: 0x14100c, side: THREE.BackSide });
+  m.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>\n  transformed += normalize(normal) * ${key};`);
+  };
+  m.customProgramCacheKey = () => `outline-extrude-${key}`;
+  extrudeCache.set(key, m);
+  return m;
 }

@@ -52,7 +52,7 @@ export const FORMS = {
     kiDrain: 5,
     transformKiCost: 60,
     aura: { color: 0xffd23a, core: 0xffffff, scale: 1.2, opacity: 0.85, lightning: true },
-    hair: { colorOverride: 0xffdf3a, lift: 0.75, lengthScale: 1.2, extraLong: false },
+    hair: { colorOverride: 0xffdf3a, lift: 0.75, lengthScale: 1.2, extraLong: false, sharp: true },
     eyes: 0x1fb5a8,
     sound: 'ssj2',
     unlock: { type: 'phase', value: 2, label: 'Phase 2: defeat Lord Veyron after mastering SSJ1' },

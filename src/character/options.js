@@ -1,81 +1,171 @@
 // Customization options for the character creator. All names are original.
+//
+// Every player is the same base model, "Rokan, the Primal Titan": a broad,
+// muscular anime brawler in red-and-black battle armor. The creator recolors
+// and reshapes that one rig; it never swaps in a different character.
 export const SKIN_TONES = [
-  { name: 'Fair', color: 0xffe0c4 },
-  { name: 'Light', color: 0xf6c9a0 },
-  { name: 'Warm', color: 0xe3a878 },
-  { name: 'Tan', color: 0xc68a5a },
-  { name: 'Bronze', color: 0x9c6a42 },
-  { name: 'Deep', color: 0x6e4529 },
-  { name: 'Ebony', color: 0x4a2d1b },
+  { name: 'Porcelain', color: 0xffe3cc },
+  { name: 'Fair', color: 0xf8d0aa },
+  { name: 'Light', color: 0xeebc8e },
+  { name: 'Warm', color: 0xdba273 },
+  { name: 'Olive', color: 0xc08d5c },
+  { name: 'Tan', color: 0xa87348 },
+  { name: 'Bronze', color: 0x8c5a36 },
+  { name: 'Umber', color: 0x6f4428 },
+  { name: 'Deep', color: 0x56331e },
+  { name: 'Ebony', color: 0x3e2416 },
 ];
 
 export const HAIR_STYLES = [
-  { id: 'spiky', name: 'Wild Spikes' }, // inspired by the classic hero silhouette
-  { id: 'flame', name: 'Flame Crest' }, // tall upward "prince" silhouette
-  { id: 'scholar', name: 'Scholar Spikes' }, // short spikes with a single bang
-  { id: 'swordsman', name: 'Swordsman Cut' }, // straight center-parted hair
-  { id: 'mane', name: 'Warrior Mane' }, // long wild hair down the back
+  { id: 'rokan', name: 'Titan Mane' }, // Rokan default: thick, wild, swept-back spikes
+  { id: 'wild', name: 'Wild Spikes' }, // classic hero burst in every direction
+  { id: 'upright', name: 'Upright Spikes' }, // tall spikes standing straight up
+  { id: 'short', name: 'Short Spikes' }, // cropped spikes with a single bang
+  { id: 'layered', name: 'Layered Mane' }, // long layered hair down the back
+  { id: 'prince', name: 'Prince Crest' }, // widow's peak, tall flame-like crest
+  { id: 'swordsman', name: 'Swordsman Cut' },
   { id: 'ponytail', name: 'Battle Ponytail' },
 ];
 
 export const HAIR_COLORS = [
-  { name: 'Black', color: 0x15161c },
-  { name: 'Dark Brown', color: 0x3b2618 },
-  { name: 'Lavender', color: 0xb9a4e8 },
-  { name: 'Crimson', color: 0x9e1f2a },
-  { name: 'Silver', color: 0xcfd6e0 },
-  { name: 'Forest', color: 0x1f5a3a },
-  { name: 'Navy', color: 0x1d2a5e },
+  { name: 'Black', color: 0x16171d },
+  { name: 'Brown', color: 0x4a2c18 },
+  { name: 'Blonde', color: 0xf0cf6a },
+  { name: 'White', color: 0xf4f4f8 },
+  { name: 'Red', color: 0xb3232e },
+  { name: 'Blue', color: 0x2650c8 },
+  { name: 'Silver', color: 0xb8c2d0 },
 ];
 
 export const EYE_COLORS = [
   { name: 'Black', color: 0x15161c },
   { name: 'Brown', color: 0x6b3e1e },
+  { name: 'Amber', color: 0xd08a1a },
   { name: 'Blue', color: 0x2f6fd6 },
   { name: 'Green', color: 0x2e9a54 },
   { name: 'Violet', color: 0x7a3fc4 },
   { name: 'Red', color: 0xc42a2a },
 ];
 
-export const BODY_TYPES = [
-  { id: 'male', name: 'Male' },
-  { id: 'female', name: 'Female' },
+// Body presets scale the one shared rig. Rokan's default is Muscular.
+// width: shoulders/chest, limb: arm & leg thickness, height: overall scale.
+export const BUILDS = [
+  { id: 'lean', name: 'Lean', width: 0.86, limb: 0.82, chestDepth: 0.9, height: 0.98 },
+  { id: 'athletic', name: 'Athletic', width: 0.94, limb: 0.92, chestDepth: 0.95, height: 1.0 },
+  { id: 'muscular', name: 'Muscular', width: 1.0, limb: 1.0, chestDepth: 1.0, height: 1.0 },
+  { id: 'heavy', name: 'Heavy Muscular', width: 1.12, limb: 1.16, chestDepth: 1.1, height: 1.02 },
 ];
 
+// Frame: kept from Phase 1 so existing female warriors still load.
+export const BODY_TYPES = [
+  { id: 'male', name: 'Masculine' },
+  { id: 'female', name: 'Feminine' },
+];
+
+export const BROWS = [
+  { id: 'fierce', name: 'Fierce' }, // angled, thick (Rokan)
+  { id: 'heavy', name: 'Heavy' },
+  { id: 'sharp', name: 'Sharp' },
+  { id: 'calm', name: 'Calm' },
+];
+
+export const SCARS = [
+  { id: 'none', name: 'None' },
+  { id: 'eye', name: 'Eye Scar' },
+  { id: 'cheek', name: 'Cheek Scar' },
+  { id: 'cross', name: 'Cross Scar' },
+];
+
+export const EXPRESSIONS = [
+  { id: 'fierce', name: 'Fierce' }, // narrowed, intense eyes (Rokan)
+  { id: 'focused', name: 'Focused' },
+  { id: 'bright', name: 'Bright' }, // large, open anime eyes
+];
+
+// Outfit style decides which pieces exist; the five color slots below
+// recolor them. 'rokan' is the default Titan battle armor.
 export const OUTFITS = [
+  { id: 'rokan', name: 'Titan Armor' },
   { id: 'gi', name: 'Training Gi' },
-  { id: 'armor', name: 'Saiyan Armor' },
   { id: 'jacket', name: 'Battle Jacket' },
   { id: 'tank', name: 'Sleeveless Fighter' },
 ];
 
-export const OUTFIT_COLORS = [
-  { name: 'Sunset Orange', primary: 0xff7a1a, secondary: 0x1f3fa8 },
-  { name: 'Royal Blue', primary: 0x2546c7, secondary: 0xe9e9f2 },
-  { name: 'Shadow Purple', primary: 0x5a2d91, secondary: 0x1a1a24 },
-  { name: 'Crimson', primary: 0xc4202f, secondary: 0x202024 },
-  { name: 'Forest', primary: 0x2c7a3c, secondary: 0xe0c060 },
-  { name: 'Snow', primary: 0xf2f2f2, secondary: 0x2b4fd8 },
-  { name: 'Midnight', primary: 0x1c2240, secondary: 0xff9a1a },
+// One palette shared by every outfit section.
+export const OUTFIT_PALETTE = [
+  { name: 'Crimson', color: 0xb81d2a },
+  { name: 'Black', color: 0x17171d },
+  { name: 'Charcoal', color: 0x3a3b46 },
+  { name: 'White', color: 0xeeeef2 },
+  { name: 'Gold', color: 0xd9a92e },
+  { name: 'Orange', color: 0xff7a1a },
+  { name: 'Royal Blue', color: 0x2546c7 },
+  { name: 'Navy', color: 0x1b2552 },
+  { name: 'Purple', color: 0x5a2d91 },
+  { name: 'Forest', color: 0x2c7a3c },
 ];
 
-const NAME_A = ['Kar', 'Vel', 'Ra', 'Zor', 'Bry', 'Tal', 'Sei', 'Kai', 'Lum', 'Dax', 'Ori', 'Nap'];
-const NAME_B = ['ot', 'ix', 'en', 'ara', 'u', 'iko', 'as', 'ion', 'ia', 'ek', 'ro', 'ina'];
+// Recolorable outfit sections, in creator order.
+export const OUTFIT_SECTIONS = [
+  { key: 'armorColor', name: 'Armor / chest' },
+  { key: 'suitColor', name: 'Undersuit' },
+  { key: 'gloveColor', name: 'Wraps / gloves' },
+  { key: 'bootColor', name: 'Boots' },
+  { key: 'beltColor', name: 'Belt / accents' },
+];
+
+export const paletteColor = (i) => OUTFIT_PALETTE[((i % OUTFIT_PALETTE.length) + OUTFIT_PALETTE.length) % OUTFIT_PALETTE.length].color;
+export const buildOf = (c) => BUILDS.find((b) => b.id === c.build) || BUILDS[2];
+
+const NAME_A = ['Kar', 'Vel', 'Ra', 'Zor', 'Bry', 'Tal', 'Sei', 'Kai', 'Lum', 'Dax', 'Ori', 'Nap', 'Ro'];
+const NAME_B = ['ot', 'ix', 'en', 'ara', 'u', 'iko', 'as', 'ion', 'ia', 'ek', 'ro', 'ina', 'kan'];
 export function randomName() {
   const a = NAME_A[Math.floor(Math.random() * NAME_A.length)];
   const b = NAME_B[Math.floor(Math.random() * NAME_B.length)];
   return (a + b).slice(0, 12);
 }
 
+// The Rokan default look.
 export function defaultCharacter() {
   return {
+    version: 2,
     name: randomName(),
     body: 'male',
-    skin: 1,
-    hairStyle: 'spiky',
-    hairColor: 0,
+    build: 'muscular',
+    skin: 8, // Deep
+    hairStyle: 'rokan',
+    hairColor: 0, // Black
     eyeColor: 0,
-    outfit: 'gi',
-    outfitColor: 0,
+    brows: 'fierce',
+    scar: 'none',
+    expression: 'fierce',
+    outfit: 'rokan',
+    armorColor: 0, // Crimson
+    suitColor: 1, // Black
+    gloveColor: 0, // Crimson wraps
+    bootColor: 1, // Black
+    beltColor: 4, // Gold
   };
+}
+
+// Phase 1 saves stored outfitColor (a primary/secondary pair) and older
+// hairstyle ids. Map them onto the new sections so nobody loses their look.
+const OLD_HAIR = { spiky: 'wild', flame: 'prince', scholar: 'short', mane: 'layered' };
+const OLD_OUTFIT_COLORS = [[5, 6], [6, 3], [8, 1], [0, 1], [9, 4], [3, 6], [7, 5]];
+const OLD_HAIR_COLORS = [0, 1, 6, 4, 6, 1, 5]; // Black, Brown, Lavender→Silver, Crimson→Red, Silver, Forest→Brown, Navy→Blue
+const OLD_SKIN = [0, 2, 3, 5, 6, 8, 9];
+export function migrateCharacter(saved) {
+  const c = { ...defaultCharacter(), ...(saved || {}) };
+  if (!saved || saved.version >= 2) return c;
+  c.version = 2;
+  c.hairStyle = OLD_HAIR[saved.hairStyle] || (HAIR_STYLES.some((h) => h.id === saved.hairStyle) ? saved.hairStyle : 'rokan');
+  c.hairColor = OLD_HAIR_COLORS[saved.hairColor] ?? 0;
+  c.skin = OLD_SKIN[saved.skin] ?? 8;
+  c.eyeColor = [0, 1, 3, 4, 5, 6][saved.eyeColor] ?? 0;
+  c.outfit = saved.outfit === 'armor' ? 'rokan' : saved.outfit || 'rokan';
+  const [p, s] = OLD_OUTFIT_COLORS[saved.outfitColor] || [0, 1];
+  Object.assign(c, { armorColor: p, suitColor: s, gloveColor: s, bootColor: 1, beltColor: s });
+  c.build = 'muscular';
+  delete c.outfitColor;
+  return c;
 }

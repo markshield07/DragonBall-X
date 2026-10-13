@@ -6,7 +6,8 @@ import { ACTIVITIES } from '../training/Training.js';
 import { BOSSES } from '../boss/Raxor.js';
 import { GRAPHICS_PRESETS } from '../settings/Settings.js';
 import {
-  SKIN_TONES, HAIR_STYLES, HAIR_COLORS, EYE_COLORS, BODY_TYPES, OUTFITS, OUTFIT_COLORS, randomName,
+  SKIN_TONES, HAIR_STYLES, HAIR_COLORS, EYE_COLORS, BODY_TYPES, BUILDS, BROWS, SCARS, EXPRESSIONS,
+  OUTFITS, OUTFIT_PALETTE, OUTFIT_SECTIONS, randomName, defaultCharacter,
 } from '../character/options.js';
 import { formatNumber } from '../core/math.js';
 
@@ -57,6 +58,7 @@ export class CharacterCreator {
     this.game = game;
     this.panel = new Panel({ width: 1.3, height: 1.3, name: 'creator', depthTest: false });
     this.keyboard = false;
+    this.tab = 'body';
     this.panel.setDraw((ui) => this.draw(ui));
     window.addEventListener('keydown', (e) => {
       if (this.game.state !== 'creator' || this.game.isXR) return;
@@ -75,49 +77,67 @@ export class CharacterCreator {
     const g = this.game;
     const c = g.character;
     ui.background();
-    ui.text('CREATE YOUR SAIYAN', ui.W / 2, 80, { size: 60, align: 'center', color: COLORS.gold });
+    ui.text('CREATE YOUR SAIYAN', ui.W / 2, 72, { size: 56, align: 'center', color: COLORS.gold });
+    ui.text('Base model: Rokan, the Primal Titan', ui.W / 2, 112, { size: 26, align: 'center', color: COLORS.muted, weight: 'normal' });
     if (this.keyboard) return this.drawKeyboard(ui);
-    const rowH = 104;
-    let y = 120;
+    const rowH = 96;
+    let y = 128;
     const labelX = 40;
     const valX = 330;
     const valW = ui.W - valX - 40;
-    const arrowRow = (id, label, value, onPrev, onNext) => {
-      ui.text(label, labelX, y + 60, { size: 36, color: COLORS.muted });
-      ui.button(`${id}-prev`, '<', valX, y + 14, 80, 76, { size: 44, onClick: () => { onPrev(); this.changed(); } });
-      ui.text(value, valX + valW / 2, y + 64, { size: 38, align: 'center', maxWidth: valW - 190 });
-      ui.button(`${id}-next`, '>', valX + valW - 80, y + 14, 80, 76, { size: 44, onClick: () => { onNext(); this.changed(); } });
+    const arrowRow = (id, label, list, key, idOf = (o) => o.id) => {
+      const i = Math.max(0, list.findIndex((o) => idOf(o) === c[key]));
+      ui.text(label, labelX, y + 58, { size: 34, color: COLORS.muted });
+      ui.button(`${id}-prev`, '<', valX, y + 12, 80, 72, { size: 44, onClick: () => { c[key] = idOf(list[cycle(list, i, -1)]); this.changed(); } });
+      ui.text(list[i].name, valX + valW / 2, y + 60, { size: 36, align: 'center', maxWidth: valW - 190 });
+      ui.button(`${id}-next`, '>', valX + valW - 80, y + 12, 80, 72, { size: 44, onClick: () => { c[key] = idOf(list[cycle(list, i, 1)]); this.changed(); } });
       y += rowH;
     };
     const swatchRow = (id, label, list, key, colorOf = (o) => o.color) => {
-      ui.text(label, labelX, y + 60, { size: 36, color: COLORS.muted });
+      ui.text(label, labelX, y + 58, { size: 34, color: COLORS.muted, maxWidth: valX - labelX - 10 });
       const n = list.length;
       const size = Math.min(78, (valW - 10) / n);
-      list.forEach((o, i) => ui.swatch(`${id}-${i}`, valX + i * size, y + 14, size - 6, colorOf(o), {
+      list.forEach((o, i) => ui.swatch(`${id}-${i}`, valX + i * size, y + 12, size - 6, colorOf(o), {
         selected: c[key] === i,
         onClick: () => { c[key] = i; this.changed(); },
       }));
       y += rowH;
     };
     // Name
-    ui.text('Name', labelX, y + 60, { size: 36, color: COLORS.muted });
-    ui.text(c.name || '—', valX, y + 62, { size: 44, color: '#ffffff' });
-    ui.button('name-rand', 'Random', ui.W - 380, y + 14, 160, 76, { size: 30, onClick: () => { c.name = randomName(); this.changed(); } });
-    ui.button('name-edit', 'Type', ui.W - 200, y + 14, 160, 76, { size: 30, onClick: () => { this.keyboard = true; } });
+    ui.text('Name', labelX, y + 58, { size: 34, color: COLORS.muted });
+    ui.text(c.name || '—', valX, y + 60, { size: 42, color: '#ffffff', maxWidth: ui.W - valX - 400 });
+    ui.button('name-rand', 'Random', ui.W - 380, y + 12, 160, 72, { size: 30, onClick: () => { c.name = randomName(); this.changed(); } });
+    ui.button('name-edit', 'Type', ui.W - 200, y + 12, 160, 72, { size: 30, onClick: () => { this.keyboard = true; } });
     y += rowH;
-    arrowRow('body', 'Body', BODY_TYPES.find((b) => b.id === c.body).name, () => { c.body = c.body === 'male' ? 'female' : 'male'; }, () => { c.body = c.body === 'male' ? 'female' : 'male'; });
-    swatchRow('skin', 'Skin', SKIN_TONES, 'skin');
-    const hs = HAIR_STYLES.findIndex((h) => h.id === c.hairStyle);
-    arrowRow('hair', 'Hair', HAIR_STYLES[hs].name, () => { c.hairStyle = HAIR_STYLES[cycle(HAIR_STYLES, hs, -1)].id; }, () => { c.hairStyle = HAIR_STYLES[cycle(HAIR_STYLES, hs, 1)].id; });
-    swatchRow('hairc', 'Hair color', HAIR_COLORS, 'hairColor');
-    swatchRow('eye', 'Eyes', EYE_COLORS, 'eyeColor');
-    const oi = OUTFITS.findIndex((o) => o.id === c.outfit);
-    arrowRow('outfit', 'Outfit', OUTFITS[oi].name, () => { c.outfit = OUTFITS[cycle(OUTFITS, oi, -1)].id; }, () => { c.outfit = OUTFITS[cycle(OUTFITS, oi, 1)].id; });
-    swatchRow('oc', 'Outfit color', OUTFIT_COLORS, 'outfitColor', (o) => o.primary);
-    ui.button('preview-ssj', g.previewForm === 'ssj1' ? 'Preview: Super Saiyan' : 'Preview: Base', 40, ui.H - 130, 440, 96, {
+    // Section tabs
+    const tabs = [['body', 'Body'], ['face', 'Face'], ['hair', 'Hair'], ['outfit', 'Outfit']];
+    const tw = (ui.W - 80 - 3 * 12) / 4;
+    tabs.forEach(([id, label], i) => ui.button(`ctab-${id}`, label, 40 + i * (tw + 12), y + 6, tw, 70, {
+      size: 32, selected: this.tab === id, onClick: () => { this.tab = id; },
+    }));
+    y += 96;
+    if (this.tab === 'body') {
+      arrowRow('build', 'Build', BUILDS, 'build');
+      arrowRow('frame', 'Frame', BODY_TYPES, 'body');
+      swatchRow('skin', 'Skin tone', SKIN_TONES, 'skin');
+      ui.button('reset', 'Reset to Rokan default look', valX, y + 12, valW, 72, { size: 30, onClick: () => { const n = c.name; Object.assign(c, defaultCharacter(), { name: n }); this.changed(); } });
+    } else if (this.tab === 'face') {
+      swatchRow('eye', 'Eye color', EYE_COLORS, 'eyeColor');
+      arrowRow('expr', 'Expression', EXPRESSIONS, 'expression');
+      arrowRow('brows', 'Brows', BROWS, 'brows');
+      arrowRow('scar', 'Scars', SCARS, 'scar');
+    } else if (this.tab === 'hair') {
+      arrowRow('hair', 'Hairstyle', HAIR_STYLES, 'hairStyle');
+      swatchRow('hairc', 'Hair color', HAIR_COLORS, 'hairColor');
+      ui.wrap('Super Saiyan turns any hairstyle golden and lifts it. Use Preview to see it.', labelX, y + 40, ui.W - 80, { size: 26 });
+    } else {
+      arrowRow('outfit', 'Outfit', OUTFITS, 'outfit');
+      for (const sec of OUTFIT_SECTIONS) swatchRow(sec.key, sec.name, OUTFIT_PALETTE, sec.key);
+    }
+    ui.button('preview-ssj', g.previewForm === 'ssj1' ? 'Preview: Super Saiyan' : 'Preview: Base', 40, ui.H - 118, 440, 90, {
       size: 30, onClick: () => { g.togglePreviewForm(); },
     });
-    ui.button('start', 'Begin Training!', ui.W - 520, ui.H - 130, 480, 96, { size: 42, color: '#b4560f', onClick: () => g.finishCreation() });
+    ui.button('start', 'Begin Training!', ui.W - 520, ui.H - 118, 480, 90, { size: 42, color: '#b4560f', onClick: () => g.finishCreation() });
   }
 
   drawKeyboard(ui) {
