@@ -10,7 +10,7 @@ export function loft(rings, segments=24) {
   }
   for(let i=0;i<rings.length-1;i++) for(let j=0;j<segments;j++) {
     const a=i*segments+j,b=i*segments+(j+1)%segments,c=(i+1)*segments+j,d=(i+1)*segments+(j+1)%segments;
-    triangles.push(a,b,c,b,d,c);
+    triangles.push(a,c,b,b,c,d);
   }
   const g=new THREE.BufferGeometry();
   g.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));
