@@ -32,7 +32,7 @@ export const ATTACKS = {
     radius: 0.22,
     color: 0xffe26a,
     unlock: null,
-    effects: 'Hold to gather energy in your hand, release to launch a heavy blast.',
+    effects: 'Hold to gather energy in your hand, release to launch a heavy blast. Keep holding after it is full and it grows bigger and bigger (uses ki) for a huge explosion.',
   },
   // Beams: hold the trigger (bring both hands together in VR) to charge a
   // sphere, then release or push both hands forward to fire. Aim steers it.

@@ -215,7 +215,7 @@ export class Combat {
       const pulse = 1 + Math.sin(p.life * 40) * 0.08;
       p.mesh.scale.setScalar(p.radius * pulse);
       // Trail
-      if (Math.random() < 0.7) this.fx.stream(p.mesh.position, p.color, { vy: 0, spread: p.radius * 0.5, size: p.radius * 0.9, life: 0.25 });
+      if (Math.random() < 0.7) this.fx.stream(p.mesh.position, p.color, { vy: 0, spread: p.radius * 0.5, size: Math.min(0.32, p.radius * 0.9), life: 0.25 });
       const pp = p.mesh.position;
       let done = p.life <= 0 || pp.y < terrainHeight(pp.x, pp.z);
       if (!done) {
@@ -314,6 +314,12 @@ export class Combat {
     this.fx.explosion(p.mesh.position, p.color, energy, p.vel);
     this.fx.flash(p.mesh.position, p.color, p.radius * 4 + energy * 0.8, 0.18 + 0.06 * energy);
     if (p.kind === 'sphere') this.fx.ring(p.mesh.position.clone(), p.color, { maxRadius: 6 * p.radius + 2, duration: 0.7 });
+    // Overcharged ki blast: a second, bigger white shockwave and a long flash.
+    if (p.kind === 'overcharged') {
+      this.fx.ring(p.mesh.position.clone(), 0xffffff, { maxRadius: 4 + 3 * energy, duration: 0.9, opacity: 0.8 });
+      this.fx.ring(p.mesh.position.clone(), p.color, { maxRadius: 7 + 5 * energy, duration: 1.4, opacity: 0.5 });
+      this.fx.flash(p.mesh.position, 0xffffff, 3 + energy * 2, 0.45);
+    }
     bus.emit('projectile:explode', { position: p.mesh.position.clone(), charged: p.charged, team: p.team, kind: p.kind, energy });
   }
 

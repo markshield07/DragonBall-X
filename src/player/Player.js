@@ -20,6 +20,12 @@ const MAX_ALTITUDE = 300;
 // The player: resources (health / ki / stamina), locomotion & comfort,
 // punching, ki attacks, blocking, and how damage is taken. Reads the unified
 // input state, so VR and desktop share every rule here.
+// Charged Ki Blast overcharge: after a full charge, every OVERCHARGE_STAGE_TIME
+// seconds of holding grows it one level (up to OVERCHARGE_STAGES), burning ki.
+const OVERCHARGE_STAGES = 4;
+const OVERCHARGE_STAGE_TIME = 1.2;
+const OVERCHARGE_KI_PER_SEC = 7;
+
 export class Player {
   constructor(game) {
     this.game = game;
@@ -422,23 +428,78 @@ export class Player {
               const a = Math.random() * Math.PI * 2;
               this.game.effects.stream(_w.copy(this.chargeOrb.position).add(_v.set(Math.cos(a) * r * 2.5, Math.random() * r, Math.sin(a) * r * 2.5)), atk.color, { vy: -0.3, spread: 0.05, size: 0.05, life: 0.3 });
             }
-          } else if (Math.random() < 0.5 + st.charge) {
-            this.game.effects.stream(hands.hands[side].worldPos, atk.color, { vy: 0.2, spread: 0.12 * (1 - st.charge) + 0.03, size: 0.03 + 0.04 * st.charge, life: 0.25 });
+          } else {
+            this.chargeBlastHeld(dt, side, hs, hands, atk, st);
           }
-          if (Math.random() < 0.1) this.game.haptic(side, 0.15 + 0.3 * st.charge, 20);
+          if (Math.random() < 0.1 + 0.1 * (st.over || 0)) this.game.haptic(side, Math.min(1, 0.15 + 0.3 * st.charge + 0.15 * (st.over || 0)), 20);
         } else if (st.held || st.time > 0) {
           if (st.charge > 0.25 && st.cooldown <= 0) {
             if (sphere) this.fireSphere(side, hs, atk, st.charge);
-            else this.fireBlast(side, hs, atk, st.charge);
+            else this.fireBlast(side, hs, atk, st.charge, st.over || 0);
           }
-          if (sphere) this.chargeOrb.visible = false;
+          this.chargeOrb.visible = false;
           st.time = 0;
           st.charge = 0;
+          st.over = 0;
+          st.stage = 0;
         }
       }
       st.held = pressed;
     }
-    if (atk.type !== 'sphere' && !this.beam.charging) this.chargeOrb.visible = false;
+    const holdingBlast = atk.type === 'charged' && (this.fire.left.charge > 0.15 || this.fire.right.charge > 0.15);
+    if (atk.type !== 'sphere' && !this.beam.charging && !holdingBlast) this.chargeOrb.visible = false;
+  }
+
+  // Charged Ki Blast held in the hand. Once fully charged it keeps growing
+  // while you hold it (OVERCHARGE_STAGES levels, burning ki), into a huge
+  // ball of energy that makes an enormous explosion.
+  chargeBlastHeld(dt, side, hs, hands, atk, st) {
+    if (st.charge >= 1) {
+      const canGrow = (st.over || 0) < OVERCHARGE_STAGES && this.ki > atk.kiCost + 1;
+      if (canGrow) {
+        st.over = Math.min(OVERCHARGE_STAGES, (st.over || 0) + dt / OVERCHARGE_STAGE_TIME);
+        this.ki = Math.max(0, this.ki - OVERCHARGE_KI_PER_SEC * dt);
+      }
+      const stage = Math.floor(st.over + 1e-6);
+      if (stage > (st.stage || 0)) {
+        st.stage = stage;
+        const max = stage >= OVERCHARGE_STAGES;
+        bus.emit('hud:message', { text: max ? 'MAXIMUM POWER! Let it go!' : `Power level ${stage + 1}! Keep holding!`, color: max ? '#ff5a3a' : '#ffd23a' });
+        this.game.haptic(side, 0.6 + 0.1 * stage, 120);
+      }
+    }
+    const over = st.over || 0;
+    const show = st.charge > 0.15;
+    const hand = hands.hands[side].worldPos;
+    if (show) {
+      // The ball of ki sits just in front of the hand, swelling and crackling.
+      const r = (0.04 + 0.1 * st.charge) * (1 + 0.45 * over);
+      const o = this.chargeOrb;
+      o.visible = true;
+      o.material.color.setHex(this.form === 'base' ? atk.color : 0xfff07a);
+      const shake = over > 0 ? Math.sin(st.time * 47) * 0.012 * over : 0;
+      o.scale.setScalar(r * (1 + Math.sin(st.time * 30) * (0.04 + 0.03 * over)));
+      // Pushed further out (and a little low) as it grows, so it never hides
+      // what you're aiming at.
+      o.position.copy(hand).addScaledVector(hs.aimDir, 0.06 + r * 1.3 + 0.1 * over).add(_v.set(shake, -shake * 0.5 - r * 0.35, 0));
+      // Energy streams pulled into the ball, more and wider the bigger it gets.
+      const n = 1 + Math.floor(over * 1.5);
+      for (let i = 0; i < n; i++) {
+        if (Math.random() > 0.7) continue;
+        const a = Math.random() * Math.PI * 2;
+        const d = r * (2.2 + over * 0.5);
+        this.game.effects.stream(_w.copy(o.position).add(_v.set(Math.cos(a) * d, (Math.random() - 0.5) * d, Math.sin(a) * d)), atk.color, { vy: 0, spread: 0.04, size: 0.04 + 0.02 * over, life: 0.3 });
+      }
+      if (over > 0 && Math.random() < 0.15 * over) this.game.effects.burst?.(o.position.clone(), 0xffffff, 3, 2 + over, 0.03, 0.2);
+    } else if (Math.random() < 0.5 + st.charge) {
+      this.game.effects.stream(hand, atk.color, { vy: 0.2, spread: 0.12 * (1 - st.charge) + 0.03, size: 0.03 + 0.04 * st.charge, life: 0.25 });
+    }
+  }
+
+  // How charged the held Charged Ki Blast is: 0..1 charging, then 1 + overcharge.
+  blastPower() {
+    const f = this.fire;
+    return Math.max((f.left.charge || 0) + (f.left.over || 0), (f.right.charge || 0) + (f.right.over || 0));
   }
 
   activateKaioken(atk) {
@@ -551,7 +612,7 @@ export class Player {
 
   chargeLevel(side) { return this.fire[side].charge || 0; }
 
-  fireBlast(side, hs, atk, charge) {
+  fireBlast(side, hs, atk, charge, over = 0) {
     const p = this.progress;
     const f = FORMS[this.form];
     const cost = atk.kiCost * (atk.id === 'chargedBlast' ? 0.5 + 0.5 * charge : 1);
@@ -565,14 +626,17 @@ export class Player {
     const isCharged = atk.id === 'chargedBlast';
     // Ki blasts grow bigger and brighter with ki level and transformation.
     const sizeK = (1 + 0.07 * (kiLv - 1)) * (this.form !== 'base' ? 1.35 : 1);
-    const radius = atk.radius * sizeK * (isCharged ? 0.6 + 0.6 * charge : 1);
-    const damage = atk.damage * p.kiMult() * this.kiDamageMult() * (isCharged ? 0.4 + 0.8 * charge : 1);
+    const radius = atk.radius * sizeK * (isCharged ? 0.6 + 0.6 * charge : 1) * (1 + 0.55 * over);
+    const damage = atk.damage * p.kiMult() * this.kiDamageMult() * (isCharged ? 0.4 + 0.8 * charge : 1) * (1 + 0.6 * over);
     const color = this.form === 'base' || atk.type === 'barrage' ? atk.color : isCharged ? 0xfff07a : 0xffe066;
-    const origin = hs.aimOrigin.clone().addScaledVector(hs.aimDir, 0.12);
+    const origin = over > 0 && this.chargeOrb.visible ? this.chargeOrb.position.clone() : hs.aimOrigin.clone().addScaledVector(hs.aimDir, 0.12);
     // Barrage shots spray slightly.
     const dir = atk.type === 'barrage' ? hs.aimDir.clone().add(_w.set((Math.random() - 0.5) * 0.06, (Math.random() - 0.5) * 0.06, (Math.random() - 0.5) * 0.06)) : hs.aimDir;
-    this.game.combat.fire({ origin, dir, speed: atk.speed, radius, damage, color, team: 'player', charged: isCharged });
-    this.fire[side].cooldown = atk.cooldown;
+    const shot = this.game.combat.fire({ origin, dir, speed: atk.speed * (1 - 0.1 * over), radius, damage, color, team: 'player', charged: isCharged, kind: over >= 1 ? 'overcharged' : 'blast', life: 3 + over });
+    // Overcharged: a much bigger explosion than its size alone gives.
+    if (over > 0) shot.energy = 1.5 + 0.95 * over;
+    if (over >= 2) bus.emit('hud:message', { text: over >= OVERCHARGE_STAGES ? 'MAXIMUM KI BLAST!' : 'HUGE KI BLAST!', color: '#ff8a3a' });
+    this.fire[side].cooldown = atk.cooldown * (1 + 0.3 * over);
     if (atk.type !== 'barrage' || Math.random() < 0.35) bus.emit('blast:fired', { hand: side, charged: isCharged, charge, power: Math.min(1, (kiLv - 1) / 10 + (this.form !== 'base' ? 0.4 : 0)) });
   }
 

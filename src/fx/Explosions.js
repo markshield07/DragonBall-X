@@ -300,6 +300,7 @@ export class Explosions {
 
   // How much "energy" a projectile carries, from its size, damage and type.
   static energyOf(p) {
+    if (p.energy) return clamp(p.energy, 0.15, 6);
     const e = p.radius * 2.6 + Math.log10(1 + p.damage) * 0.32 + (p.charged ? 0.3 : 0) + (p.kind === 'sphere' ? 0.6 : 0) + (p.kind === 'mega' ? 0.4 : 0);
     return clamp(e, 0.15, 4.5);
   }
