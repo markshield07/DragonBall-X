@@ -19,10 +19,21 @@ export const MODELS = {
 };
 
 const cache = new Map();
+
+// Hosts that can't serve .glb (the Claude artifact test link) get the same
+// bytes base64-wrapped in JSON: build with VITE_MODEL_WRAP=json.
+async function fetchModel(url) {
+  const loader = new GLTFLoader();
+  if (import.meta.env.VITE_MODEL_WRAP !== 'json') return loader.loadAsync(url);
+  const res = await fetch(url + '.json');
+  if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}.json`);
+  const bin = Uint8Array.from(atob((await res.json()).glb), (c) => c.charCodeAt(0));
+  return loader.parseAsync(bin.buffer, url.slice(0, url.lastIndexOf('/') + 1));
+}
 export function loadModel(id) {
   if (!cache.has(id)) {
     const url = (import.meta.env.BASE_URL || './') + MODELS[id].url;
-    cache.set(id, new GLTFLoader().loadAsync(url).catch((e) => {
+    cache.set(id, fetchModel(url).catch((e) => {
       console.warn('[DBX] model failed to load', id, e);
       cache.delete(id);
       return null;
