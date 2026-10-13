@@ -59,6 +59,9 @@ function skinRamp() {
   return ramp;
 }
 
+// Flat face layers: unlit, no outline, no wounds.
+const FACE_PARTS = ['EyeWhite', 'Iris', 'Pupil', 'Highlight', 'Brow', 'Lash'];
+
 // Hair mesh per form (material names in the GLB).
 const FORM_HAIR = { base: 'Hair', ssj1: 'HairSSJ', ssj2: 'HairSSJ', ssj3: 'HairSSJ3', ssj4: 'HairSSJ4', ssj5: 'HairSSJ' };
 const HAIR_PARTS = ['Hair', 'HairSSJ', 'HairSSJ3', 'HairSSJ4'];
@@ -116,8 +119,8 @@ export class ModelAvatar {
       o.castShadow = true;
       o.frustumCulled = false; // skinned bounds don't follow the pose
       (this.parts[name] ||= []).push(o);
-      if (name.startsWith('Hair') || ['EyeWhite', 'Iris', 'Pupil', 'Highlight', 'Brow'].includes(name)) o.userData.noWounds = true;
-      if (!['EyeWhite', 'Iris', 'Pupil', 'Highlight', 'Brow'].includes(name)) outlines.push(o);
+      if (name.startsWith('Hair') || FACE_PARTS.includes(name)) o.userData.noWounds = true;
+      if (!FACE_PARTS.includes(name)) outlines.push(o);
     });
     // Ink outlines: the same skinned geometry, back faces pushed out.
     for (const o of outlines) {
@@ -150,7 +153,7 @@ export class ModelAvatar {
 
   material(name, src) {
     if (this.mats[name]) return this.mats[name];
-    const basic = ['EyeWhite', 'Iris', 'Pupil', 'Highlight', 'Brow'].includes(name);
+    const basic = FACE_PARTS.includes(name);
     const m = basic ? new THREE.MeshBasicMaterial({ color: 0xffffff }) : toonUnique(0xffffff);
     m.name = name;
     if (name === 'Skin') {
@@ -321,6 +324,7 @@ export class ModelAvatar {
     set('Pupil', 0x05070c);
     set('Highlight', 0xffffff);
     set('Brow', 0x0d0b0a);
+    set('Lash', 0x0d0b0a);
     this.setForm(this.formId);
   }
 

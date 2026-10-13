@@ -137,7 +137,10 @@ def sandal_face(f):
     return z[f].max() < ANK - 0.01 and (y > yb + 0.03)  # heel cup and strap area behind the toes
 shell('Sandal', sandal_face, lambda idx: np.full(len(idx), 0.005), material('Sandal', srgb(0x121212)))
 
-# ---- Eyes: big anime irises in the MakeHuman eye sockets ----
+# ---- Eyes: flat anime eyes painted on a smoothed eye area ----
+# The realistic sockets are filled in with a smooth surface, then the eye is
+# built as thin layers on it: white, a tall iris cut off by the upper lid,
+# pupil, two highlights, and a heavy upper lash line with a wing.
 def group_verts(g):
     s = set()
     for f, gg in zip(F, FG):
@@ -147,35 +150,168 @@ eye_white = material('EyeWhite', srgb(0xf4f1ea))
 iris_m = material('Iris', srgb(0x2c3b56))
 pupil_m = material('Pupil', srgb(0x05070c))
 hi_m = material('Highlight', srgb(0xffffff))
+lash_m = material('Lash', srgb(0x0d0b0a))
+head_w = W['head']
+
+def quad_fit(x, zz, y):
+    A = np.stack([np.ones_like(x), x, zz, x * x, zz * zz, x * zz], 1)
+    k = np.linalg.lstsq(A, y, rcond=None)[0]
+    return lambda X, Z: k[0] + k[1] * X + k[2] * Z + k[3] * X * X + k[4] * Z * Z + k[5] * X * Z
+
+EYE = {}
 for s in 'lr':
-    ev = group_verts(f'helper-{s}-eye')
-    c = ev.mean(axis=0); r = (ev.max(axis=0) - ev.min(axis=0)).max() / 2
-    bpy.ops.mesh.primitive_uv_sphere_add(segments=16, ring_count=10, radius=r * 0.98, location=tuple(c))
-    eb = bpy.context.active_object; eb.name = f'Eye_{s}'; eb.data.materials.append(eye_white)
-    bind_bone(eb, 'head')
-    for nm, rr, dd, m in (('Iris', 0.72, 0.0, iris_m), ('Pupil', 0.34, 0.0015, pupil_m)):
-        bpy.ops.mesh.primitive_circle_add(vertices=20, radius=r * rr, fill_type='TRIFAN', location=(c[0], c[1] - r * 0.9 - dd, c[2]), rotation=(math.pi / 2, 0, 0))
-        d = bpy.context.active_object; d.name = f'{nm}_{s}'; d.data.materials.append(m)
-        d.scale = (0.85, 1, 1.1)
-        bpy.ops.object.transform_apply(scale=True)
-        bind_bone(d, 'head')
-    bpy.ops.mesh.primitive_circle_add(vertices=10, radius=r * 0.14, fill_type='TRIFAN', location=(c[0] + 0.25 * r * (1 if s == 'l' else -1), c[1] - r * 0.92 - 0.003, c[2] + 0.3 * r), rotation=(math.pi / 2, 0, 0))
-    h = bpy.context.active_object; h.name = f'Highlight_{s}'; h.data.materials.append(hi_m); bind_bone(h, 'head')
-    # Brow: thick, angled down toward the nose (fierce), on the face surface.
-    pts = []
     sgn = 1 if s == 'l' else -1
-    for i in range(6):
-        t = i / 5
-        x = sgn * (0.012 + 0.048 * t)
-        zz = c[2] + r * 1.15 + 0.004 + 0.012 * t - 0.006 * t * t
-        p, n = front_point(x, zz)
-        pts.append(p + n * 0.003)
-    verts, faces = [], []
-    for i, p in enumerate(pts):
-        w = 0.010 * (1.0 - 0.45 * (i / 5)) if i else 0.008
-        verts.append((p[0], p[1] - 0.001, p[2] + w / 2)); verts.append((p[0], p[1] - 0.001, p[2] - w / 2))
-        if i: faces.append((2 * i - 2, 2 * i - 1, 2 * i + 1, 2 * i))
-    br = make_mesh(f'Brow_{s}', verts, faces)
+    ev = group_verts(f'helper-{s}-eye')
+    c = ev.mean(axis=0)
+    ex, ez = c[0] + sgn * 0.001, c[2] + 0.001
+    d = np.sqrt(((BV[:, 0] - ex) / 0.028) ** 2 + ((z - ez + 0.004) / 0.023) ** 2)
+    front = (BV[:, 1] < c[1] + 0.03) & (head_w > 0.5) & (np.sign(BV[:, 0]) == sgn)
+    ring = front & (d > 1.0) & (d < 1.6) & (BN[:, 1] < -0.2)
+    surf = quad_fit(BV[ring, 0], z[ring], BV[ring, 1])
+    # Fill the socket: relax the region flat in x/z (boundary pinned, so the
+    # triangles unfold instead of folding over) and lay it on the fitted surface.
+    region = front & ((d < 1.0) | ((d < 1.2) & (BV[:, 1] > surf(BV[:, 0], z))))
+    inner = np.where(region)[0]
+    nbr = [[] for _ in range(NB)]
+    for f in BF:
+        for i in range(len(f)):
+            a_, b_ = f[i], f[(i + 1) % len(f)]
+            if region[a_] or region[b_]:
+                nbr[a_].append(b_); nbr[b_].append(a_)
+    xz = BV[:, [0, 2]].copy()
+    for _ in range(300):
+        for i in inner:
+            if nbr[i]: xz[i] = xz[nbr[i]].mean(axis=0)
+    BV[inner, 0] = xz[inner, 0]; BV[inner, 2] = xz[inner, 1]
+    BV[inner, 1] = surf(BV[inner, 0], BV[inner, 2])
+    EYE[s] = (sgn, ex, ez, surf)
+for i, v in enumerate(body.data.vertices):
+    v.co = BV[i]
+BN = vertex_normals(BV, BF)
+from mathutils.bvhtree import BVHTree
+from mathutils import Vector
+FACE_BVH = BVHTree.FromPolygons(BV.tolist(), BF)
+def on_face(x, zz, off):
+    """Point on the front of the body at (x, z), pushed out along the normal."""
+    loc, n, _, _ = FACE_BVH.ray_cast(Vector((x, -1.0, zz)), Vector((0, 1, 0)))
+    return np.array(loc) + np.array(n) * off
+
+# Fierce male shape: the upper lid slants down toward the nose.
+def upper(t):
+    t = np.clip(t, 0, 1)
+    return -0.0025 + 0.0065 * t + 0.0074 * np.sin(np.pi * t ** 0.8) ** 0.6
+def lower(t):
+    t = np.clip(t, 0, 1)
+    return -0.0025 + 0.0035 * t - 0.0052 * np.sin(np.pi * t) ** 0.9
+U0, U1 = -0.017, 0.019
+def uat(t): return U0 + (U1 - U0) * t
+EYE_POLY = [(uat(t), upper(t)) for t in np.linspace(0, 1, 17)] + [(uat(t), lower(t)) for t in np.linspace(1, 0, 17)[1:-1]]
+
+def ellipse(cu, cv, ru, rv, n=24):
+    return [(cu + ru * np.cos(a), cv + rv * np.sin(a)) for a in np.linspace(0, 2 * np.pi, n, endpoint=False)]
+
+def clip(poly, clipper):
+    """Sutherland-Hodgman: poly clipped to the convex, counter-clockwise clipper."""
+    def inside(p, a, b): return (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]) >= 0
+    def cross(p, q, a, b):
+        x1, y1, x2, y2, x3, y3, x4, y4 = *p, *q, *a, *b
+        den = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
+        t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / den
+        return (x1 + t * (x2 - x1), y1 + t * (y2 - y1))
+    out = poly
+    for i in range(len(clipper)):
+        a, b = clipper[i - 1], clipper[i]
+        inp, out = out, []
+        for j in range(len(inp)):
+            p, q = inp[j - 1], inp[j]
+            if inside(q, a, b):
+                if not inside(p, a, b): out.append(cross(p, q, a, b))
+                out.append(q)
+            elif inside(p, a, b):
+                out.append(cross(p, q, a, b))
+    return out
+
+def ccw(poly):
+    area = sum(poly[i - 1][0] * poly[i][1] - poly[i][0] * poly[i - 1][1] for i in range(len(poly)))
+    return poly if area > 0 else poly[::-1]
+
+def place(s, pts, off):
+    sgn, ex, ez, surf = EYE[s]
+    out = []
+    for u, v in pts:
+        X, Z = ex + sgn * u, ez + v
+        out.append((X, float(surf(X, Z)) - off, Z))
+    return out
+
+def disc(name, s, poly, off, mat):
+    """Convex polygon filled with concentric rings, laid on the eye surface."""
+    cu = sum(p[0] for p in poly) / len(poly); cv = sum(p[1] for p in poly) / len(poly)
+    rings = [0.34, 0.67, 1.0]
+    pts = [(cu, cv)] + [(cu + (p[0] - cu) * r, cv + (p[1] - cv) * r) for r in rings for p in poly]
+    n = len(poly); faces = []
+    for k in range(n):
+        faces.append((0, 1 + k, 1 + (k + 1) % n))
+    for r in range(len(rings) - 1):
+        a0, b0 = 1 + r * n, 1 + (r + 1) * n
+        for k in range(n):
+            faces.append((a0 + k, b0 + k, b0 + (k + 1) % n, a0 + (k + 1) % n))
+    verts = place(s, pts, off)
+    if s == 'r': faces = [f[::-1] for f in faces]
+    ob = make_mesh(name, verts, faces)
+    ob.data.materials.append(mat)
+    # Face the camera side (-y); flip if the winding came out backwards.
+    me = ob.data; me.calc_loop_triangles() if hasattr(me, 'calc_loop_triangles') else None
+    if me.polygons[0].normal.y > 0: me.flip_normals()
+    bind_bone(ob, 'head')
+    return ob
+
+def strip(name, s, top, bot, off, mat):
+    verts = place(s, top + bot, off); n = len(top)
+    faces = [(k, k + 1, n + k + 1, n + k) for k in range(n - 1)]
+    ob = make_mesh(name, verts, faces)
+    ob.data.materials.append(mat)
+    if ob.data.polygons[0].normal.y > 0: ob.data.flip_normals()
+    bind_bone(ob, 'head')
+    return ob
+
+for s in 'lr':
+    sgn = EYE[s][0]
+    white = ccw(EYE_POLY)
+    disc(f'EyeWhite_{s}', s, white, 0.0010, eye_white)
+    disc(f'Iris_{s}', s, ccw(clip(ccw(ellipse(0.0012, 0.0006, 0.0068, 0.0095)), white)), 0.0014, iris_m)
+    disc(f'Pupil_{s}', s, ccw(clip(ccw(ellipse(0.0012, 0.0004, 0.0028, 0.0044)), white)), 0.0017, pupil_m)
+    # Highlights: same world side on both eyes (one key light).
+    hu = -0.0025 * sgn
+    disc(f'Highlight_{s}', s, ccw(ellipse(0.0012 + hu, 0.0032, 0.0016, 0.0018, 12)), 0.0020, hi_m)
+    disc(f'Highlight2_{s}', s, ccw(ellipse(0.0012 - hu * 1.1, -0.0022, 0.0008, 0.0008, 10)), 0.0020, hi_m)
+    # Upper lash line: thin at the inner corner, heavy at the outer one, then a short wing.
+    ts = np.linspace(0, 1, 18)
+    top, bot = [], []
+    for t in ts:
+        th = 0.0011 + 0.0028 * t ** 1.2
+        top.append((uat(t), upper(t) + th)); bot.append((uat(t), upper(t) - 0.0005))
+    for k, w in enumerate((0.0016, 0.0033, 0.005)):
+        top.append((U1 + w, upper(1) + 0.0029 - 0.0011 * (k + 1)))
+        bot.append((U1 + w * 0.9, upper(1) - 0.0009 - 0.0004 * k))
+    strip(f'Lash_{s}', s, top, bot, 0.0021, lash_m)
+    # Lower lid line on the outer half.
+    ts = np.linspace(0.5, 1, 9)
+    strip(f'LashLow_{s}', s, [(uat(t), lower(t) + 0.0002) for t in ts],
+          [(uat(t), lower(t) - 0.0005 - 0.0005 * (t - 0.5)) for t in ts], 0.0021, lash_m)
+    c = np.array([EYE[s][1], 0, EYE[s][2]]); r = 0.012
+    # Brow: a heavy wedge, thick by the nose and slanting down toward it.
+    sgn, ex, ez, _ = EYE[s]
+    top, bot = [], []
+    for i in range(8):
+        t = i / 7
+        x = sgn * (0.009 + 0.05 * t)
+        zb = ez + 0.0055 + 0.019 * t - 0.005 * t * t
+        w = 0.0065 * (1 - t) ** 0.7 + 0.0015
+        top.append(on_face(x, zb + w, 0.0025)); bot.append(on_face(x, zb, 0.0025))
+    verts = top + bot
+    faces = [(k, k + 1, 8 + k + 1, 8 + k) for k in range(7)]
+    br = make_mesh(f'Brow_{s}', [tuple(v) for v in verts], faces)
+    if br.data.polygons[0].normal.y > 0: br.data.flip_normals()
     br.data.materials.append(material('Brow', srgb(0x0d0b0a)))
     bind_bone(br, 'head')
 
