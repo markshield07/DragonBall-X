@@ -1,6 +1,10 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { toon, glowMaterial, softCircleTexture } from '../render/toon.js';
+import { mulberry32, noise2, smooth } from './noise.js';
+import { terrainHeight, terrainColor, HUB_RADIUS } from './terrain.js';
+
+export { terrainHeight };
 
 // "Mountain plains training zone": a bright, open anime battlefield.
 //
@@ -17,45 +21,10 @@ import { toon, glowMaterial, softCircleTexture } from '../render/toon.js';
 // Everything is procedural. Static props are merged into one mesh per
 // material, so the whole world is about 30 draw calls. Low hides the detail
 // group (grass, trees, boulders, dust, wind); High adds denser grass.
-const FLAT_RADIUS = 34;
-const GROUND_RADIUS = 320;
+const GROUND_RADIUS = HUB_RADIUS + 4; // the world terrain (World.js) takes over beyond the hub
 
 // Rock strata palette (sandstone layers typical of anime wastelands)
 const STRATA = [0xc98c5a, 0xb3714a, 0xdca772, 0x9a6040];
-
-function mulberry32(seed) {
-  return () => {
-    seed |= 0; seed = (seed + 0x6d2b79f5) | 0;
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-// Smooth value noise for terrain and color variation.
-function hash2(x, z) {
-  const s = Math.sin(x * 127.1 + z * 311.7) * 43758.5453;
-  return s - Math.floor(s);
-}
-function noise2(x, z) {
-  const ix = Math.floor(x); const iz = Math.floor(z);
-  const fx = x - ix; const fz = z - iz;
-  const ux = fx * fx * (3 - 2 * fx); const uz = fz * fz * (3 - 2 * fz);
-  const a = hash2(ix, iz); const b = hash2(ix + 1, iz);
-  const c = hash2(ix, iz + 1); const d = hash2(ix + 1, iz + 1);
-  return a + (b - a) * ux + (c - a) * uz + (a - b - c + d) * ux * uz;
-}
-const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
-
-// Terrain height: flat where people play, rolling hills beyond.
-export function terrainHeight(x, z) {
-  const r = Math.hypot(x, z);
-  if (r < FLAT_RADIUS) return 0;
-  const hills = noise2(x * 0.03, z * 0.03) * 9 + noise2(x * 0.08 + 7, z * 0.08) * 3;
-  const rise = smooth(FLAT_RADIUS, 70, r);
-  const foothills = smooth(110, 200, r) * 22 * (0.5 + noise2(x * 0.015, z * 0.015));
-  return hills * rise + foothills;
-}
 
 export class Arena {
   constructor(scene) {
@@ -79,7 +48,6 @@ export class Arena {
     this.buildPlatform();
     this.buildTrainingProps();
     this.buildBattleCrater();
-    this.buildMountains();
     this.buildRockFormations();
     this.buildBossArena();
     this.buildBoulders();
@@ -135,6 +103,8 @@ export class Arena {
     halo.scale.setScalar(90);
     halo.position.copy(sunPos).multiplyScalar(1.01);
     this.sunDisc = sun;
+    this.sunHalo = halo;
+    this.sunPos = sunPos;
     this.group.add(sun, halo);
   }
 
@@ -157,7 +127,7 @@ export class Arena {
     // Radially subdivided disc with rings concentrated near the player, so no
     // triangle is huge (keeps fog and depth stable on mobile GPUs). Colors are
     // per vertex: grass tones, dirt paths, worn battle areas, rocky patches.
-    const geo = new THREE.RingGeometry(0.001, GROUND_RADIUS, 96, 44);
+    const geo = new THREE.RingGeometry(0.001, GROUND_RADIUS, 128, 40);
     geo.rotateX(-Math.PI / 2);
     const pos = geo.attributes.position;
     const colors = new Float32Array(pos.count * 3);
@@ -192,9 +162,24 @@ export class Arena {
       else if (r > 18 && noise2(x * 0.05 + 30, z * 0.05) > 0.72) c.copy(rock);
       colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
     }
-    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     geo.computeVertexNormals();
-    const ground = new THREE.Mesh(geo, toon(0xffffff, { vertexColors: true }));
+    // Toward its edge the valley floor takes the world terrain's colors, so it
+    // blends seamlessly into the mountains and regions (World.js).
+    const nrm = geo.attributes.normal;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), z = pos.getZ(i);
+      const k = smooth(96, 118, Math.hypot(x, z));
+      if (k <= 0) continue;
+      terrainColor(x, z, pos.getY(i), nrm.getY(i), c);
+      colors[i * 3] += (c.r - colors[i * 3]) * k; colors[i * 3 + 1] += (c.g - colors[i * 3 + 1]) * k; colors[i * 3 + 2] += (c.b - colors[i * 3 + 2]) * k;
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    // Its own material: drawn in front where it overlaps the world terrain.
+    const groundMat = toon(0xffffff, { vertexColors: true, shared: false });
+    groundMat.polygonOffset = true;
+    groundMat.polygonOffsetFactor = -2;
+    groundMat.polygonOffsetUnits = -4;
+    const ground = new THREE.Mesh(geo, groundMat);
     ground.receiveShadow = true;
     ground.name = 'ground';
     this.group.add(ground);
@@ -332,66 +317,6 @@ export class Arena {
         this.group.add(m);
       }
     }
-  }
-
-  buildMountains() {
-    // One continuous mountain range around the valley: a displaced ring of
-    // terrain (ridged noise) painted per vertex: grass on the gentle lower
-    // slopes, layered sandstone cliffs, grey rock higher up and snow on the
-    // peaks. Smooth normals + the toon ramp give painted anime shading, and
-    // the fog turns the far ridges into pale blue silhouettes.
-    const SEG = 256, RINGS = 52, R0 = 112, R1 = 395;
-    const pos = new Float32Array((SEG + 1) * (RINGS + 1) * 3);
-    const idx = [];
-    let k = 0;
-    for (let i = 0; i <= RINGS; i++) {
-      const t = i / RINGS;
-      const r = R0 + (R1 - R0) * Math.pow(t, 1.35);
-      for (let j = 0; j <= SEG; j++) {
-        const a = (j / SEG) * Math.PI * 2;
-        const x = Math.cos(a) * r, z = Math.sin(a) * r;
-        pos[k++] = x; pos[k++] = mountainHeight(x, z); pos[k++] = z;
-      }
-    }
-    for (let i = 0; i < RINGS; i++) {
-      for (let j = 0; j < SEG; j++) {
-        const a = i * (SEG + 1) + j, b = a + 1, c = a + SEG + 1, d = c + 1;
-        idx.push(a, b, c, b, d, c);
-      }
-    }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    geo.setIndex(idx);
-    geo.computeVertexNormals();
-    const nrm = geo.attributes.normal;
-    const col = new Float32Array(pos.length);
-    const grass = new THREE.Color(0x63b844), grass2 = new THREE.Color(0x4f9f37);
-    const sandA = new THREE.Color(0xd09a62), sandB = new THREE.Color(0xb7774a), sandC = new THREE.Color(0xe2b37a);
-    const rockA = new THREE.Color(0x8c8fa0), rockB = new THREE.Color(0x767a8c);
-    const snow = new THREE.Color(0xf4f8ff);
-    const c = new THREE.Color();
-    for (let v = 0; v < pos.length / 3; v++) {
-      const x = pos[v * 3], y = pos[v * 3 + 1], z = pos[v * 3 + 2];
-      const ground = terrainHeight(x, z);
-      const up = y - ground;
-      const flat = nrm.getY(v);
-      const n = noise2(x * 0.05, z * 0.05);
-      // Sandstone strata: horizontal bands, slightly wavy.
-      const band = Math.floor((y + noise2(x * 0.02, z * 0.02) * 6) / 5.5) % 3;
-      c.copy(band === 0 ? sandA : band === 1 ? sandB : sandC);
-      // Higher up the rock turns grey-blue
-      c.lerp(n > 0.5 ? rockA : rockB, smooth(70, 115, y));
-      // Grass on gentle and low slopes
-      const g = smooth(0.42, 0.62, flat + (n - 0.5) * 0.2) * (1 - smooth(60, 105, up)) + (1 - smooth(4, 16, up));
-      c.lerp(n > 0.45 ? grass : grass2, Math.min(1, g));
-      // Snow on high, not too steep ground
-      c.lerp(snow, smooth(118, 140, y + n * 12) * smooth(0.3, 0.55, flat));
-      col[v * 3] = c.r; col[v * 3 + 1] = c.g; col[v * 3 + 2] = c.b;
-    }
-    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    const range = new THREE.Mesh(geo, toon(0xffffff, { vertexColors: true }));
-    range.name = 'mountains';
-    this.group.add(range);
   }
 
   buildRockFormations() {
@@ -718,6 +643,17 @@ export class Arena {
     this.detailGroup.add(this.dust);
   }
 
+  // Keep the sky, sun and shadow-casting light centred on the player, so they
+  // work anywhere in the big world (World.js), not just in the valley.
+  follow(pos) {
+    this.sky.position.set(pos.x, 0, pos.z);
+    this.sunDisc.position.copy(this.sunPos).add(this.sky.position);
+    this.sunHalo.position.copy(this.sunPos).multiplyScalar(1.01).add(this.sky.position);
+    const gy = terrainHeight(pos.x, pos.z);
+    this.sun.target.position.set(pos.x, gy, pos.z);
+    this.sun.position.set(pos.x + 12, gy + 22, pos.z + 8);
+  }
+
   setDetail(level) {
     this.detailGroup.visible = level > 0;
     this.highGroup.visible = level > 1;
@@ -746,31 +682,6 @@ export class Arena {
   }
 }
 
-// Ridged multi-octave noise (0..1): sharp crests where value noise crosses 0.5.
-function ridged(x, z, oct = 4) {
-  let sum = 0, amp = 0.5, f = 1, w = 1;
-  for (let o = 0; o < oct; o++) {
-    let n = 1 - Math.abs(noise2(x * f, z * f) * 2 - 1);
-    n = n * n * w;
-    w = Math.min(1, n * 2);
-    sum += n * amp;
-    amp *= 0.5; f *= 2.03;
-  }
-  return sum;
-}
-
-// Mountain range height: rises out of the foothills past ~120 m, with low
-// passes between massifs and a higher, more distant second range.
-export function mountainHeight(x, z) {
-  const r = Math.hypot(x, z);
-  const base = terrainHeight(x, z);
-  const a = Math.atan2(z, x);
-  const massif = 0.35 + 0.65 * smooth(0.25, 0.75, noise2(Math.cos(a) * 2.2 + 11, Math.sin(a) * 2.2 + 5));
-  const near = smooth(118, 175, r) * massif * (22 + 135 * ridged(x * 0.010, z * 0.010));
-  const far = smooth(250, 330, r) * (60 + 150 * ridged(x * 0.007 + 40, z * 0.007));
-  return base - 0.6 + Math.max(near, far) + (r - 112) * 0.02;
-}
-
 // Layered rock spire / butte. Stacked strata bands, each with its own
 // vertices (so the ledges between bands stay crisp), wavy erosion grooves
 // down the sides, an overhanging cap and optionally a grassy top. Vertex
@@ -778,7 +689,7 @@ export function mountainHeight(x, z) {
 //   opts.mesa  wide, flat-topped, nearly vertical walls
 //   opts.spike narrow, tapering to a point (boss arena fangs)
 const SPIRE_STRATA = [0xd29a62, 0xb9774b, 0xe3b47c, 0xa8693f];
-function spireGeometry(rad, h, seed, opts = {}) {
+export function spireGeometry(rad, h, seed, opts = {}) {
   const rnd = mulberry32(Math.floor(seed) + 7);
   const SIDES = opts.mesa ? 28 : 22;
   const bands = opts.spike ? 3 : 3 + Math.floor(rnd() * 3);
@@ -864,7 +775,7 @@ function spireGeometry(rad, h, seed, opts = {}) {
 }
 
 // Weathered boulder: a noise-displaced icosphere with a flattened base.
-function boulderGeometry(size, seed) {
+export function boulderGeometry(size, seed) {
   const geo = new THREE.IcosahedronGeometry(size, 1);
   const p = geo.attributes.position;
   const v = new THREE.Vector3();

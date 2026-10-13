@@ -3,6 +3,7 @@ import { bus } from './events.js';
 import { clamp, formatNumber } from './math.js';
 import { Renderer } from '../render/Renderer.js';
 import { Arena } from '../world/Arena.js';
+import { World } from '../world/World.js';
 import { Mirror } from '../world/Mirror.js';
 import { XRInput } from '../input/XRInput.js';
 import { DesktopInput } from '../input/DesktopInput.js';
@@ -51,6 +52,7 @@ export class Game {
     this.renderer = new Renderer(container);
     this.effects = new Effects(this.renderer.scene);
     this.arena = new Arena(this.renderer.scene);
+    this.world = new World(this);
     this.combat = new Combat(this.renderer.scene, this.effects);
     this.xrInput = new XRInput(this.renderer.renderer, this.renderer.rig);
     this.desktopInput = new DesktopInput(this.renderer.canvas, this.renderer.camera);
@@ -676,6 +678,11 @@ export class Game {
       this.haptic('left', 1, 200);
       this.haptic('right', 1, 200);
     });
+    bus.on('region:entered', ({ index }) => {
+      if (index < 0 || this.exploreTipShown) return;
+      this.exploreTipShown = true;
+      bus.emit('hud:message', { text: this.isXR ? 'Tip: fly (left stick click) and hold the stick forward to cruise at high speed.' : 'Tip: fly (G) and hold W to cruise at high speed.', color: '#bfe6ff', duration: 5 });
+    });
     bus.on('beam:start', () => this.audio.beam(true));
     bus.on('beam:end', () => this.audio.beam(false));
     bus.on('spar:won', ({ level, shadow }) => {
@@ -757,6 +764,7 @@ export class Game {
     this.mirror.update(dt);
     this.arena.update(dt);
     this.effects.eye.copy(this.player.headWorld);
+    this.world.update(dt, this.player.headWorld, xr ? 3 : 6);
     this.effects.update(dt);
     this.updatePlayerAuraPosition();
 

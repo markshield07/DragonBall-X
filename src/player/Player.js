@@ -5,6 +5,7 @@ import { FORMS } from '../progression/forms.js';
 import { ATTACKS } from '../progression/attacks.js';
 import { segmentSphere } from '../combat/Combat.js';
 import { terrainHeight } from '../world/Arena.js';
+import { WORLD_RADIUS } from '../world/terrain.js';
 import { glowMaterial } from '../render/toon.js';
 
 const _v = new THREE.Vector3();
@@ -12,9 +13,9 @@ const _w = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 const UP = new THREE.Vector3(0, 1, 0);
 const SEATED_OFFSET = 0.45;
-const ARENA_RADIUS = 30; // walking stays on the training grounds
-const FLIGHT_RADIUS = 90; // flying reaches the surrounding mountains
-const MAX_ALTITUDE = 45;
+const ARENA_RADIUS = 30; // walking range during a boss fight
+const FLIGHT_RADIUS = 90; // flying range during a boss fight
+const MAX_ALTITUDE = 300;
 
 // The player: resources (health / ki / stamina), locomotion & comfort,
 // punching, ki attacks, blocking, and how damage is taken. Reads the unified
@@ -177,7 +178,7 @@ export class Player {
         .addScaledVector(right, stick.x)
         .addScaledVector(fwd, -stick.y);
       if (move.lengthSq() > 1) move.normalize();
-      this.moveRig(move.multiplyScalar(speed * dt), ARENA_RADIUS);
+      this.moveRig(move.multiplyScalar(speed * dt), this.roamRadius(ARENA_RADIUS));
       this.moving = Math.max(this.moving, Math.min(1, mag));
     }
     // Walk on the ground (flat on the training grounds, hills beyond).
@@ -189,7 +190,10 @@ export class Player {
   // up/down (desktop: R / V) rises and descends. Touching the ground lands.
   updateFlight(dt, input, mag) {
     const R = input.hands.right;
-    const speed = 7 * this.speedMult() * Math.sqrt(this.progress.speedMult());
+    // Holding a direction builds up to high-speed cruising flight for crossing the world.
+    const cruising = mag > 0.7 && this.game.state !== 'boss';
+    this.cruise = cruising ? Math.min(1, (this.cruise || 0) + dt * 0.45) : Math.max(0, (this.cruise || 0) - dt * 2.5);
+    const speed = 7 * this.speedMult() * Math.sqrt(this.progress.speedMult()) * (1 + 4 * this.cruise * this.cruise);
     const move = new THREE.Vector3();
     if (mag >= 0.15) {
       const fwd = _v.copy(this.headForward).normalize();
@@ -201,7 +205,7 @@ export class Player {
     const vert = this.game.isXR ? -R.stick.y : -R.stick.y;
     if (Math.abs(vert) > 0.2 && (!this.game.isXR || Math.abs(R.stick.y) > Math.abs(R.stick.x))) move.y += vert * speed * 0.7;
     if (this.takeoff > 0) { this.takeoff -= dt; move.y += 2.2; }
-    this.moveRig(_v.copy(move).setY(0).multiplyScalar(dt), FLIGHT_RADIUS);
+    this.moveRig(_v.copy(move).setY(0).multiplyScalar(dt), this.roamRadius(FLIGHT_RADIUS));
     this.updateHead();
     const ground = terrainHeight(this.headWorld.x, this.headWorld.z);
     const alt = clamp(this.altitude + move.y * dt, ground, MAX_ALTITUDE);
@@ -218,6 +222,9 @@ export class Player {
       this.game.effects.stream(_w.copy(this.headWorld).add(new THREE.Vector3(0, -1.1, 0)), this.form === 'base' ? 0xbfe6ff : f.aura.color, { vy: 0, spread: 0.3, size: 0.05, life: 0.35 });
     }
   }
+
+  // Free roaming outside boss fights; a boss keeps you near its arena.
+  roamRadius(bossRadius) { return this.game.state === 'boss' ? bossRadius : WORLD_RADIUS - 60; }
 
   setAltitude(a) {
     const seated = this.game.isXR && this.settings.seated ? SEATED_OFFSET : 0;
@@ -241,7 +248,8 @@ export class Player {
   clampToArena() {
     const p = this.rig.position;
     const r = Math.hypot(p.x, p.z);
-    if (r > ARENA_RADIUS) { p.x *= ARENA_RADIUS / r; p.z *= ARENA_RADIUS / r; }
+    const R = this.roamRadius(ARENA_RADIUS);
+    if (r > R) { p.x *= R / r; p.z *= R / r; }
   }
 
   rotateRigAroundHead(angle) {
@@ -271,16 +279,18 @@ export class Player {
       for (let i = 0; i < 32; i++) {
         const tt = i * 0.05;
         const np = new THREE.Vector3(origin.x + v.x * tt, origin.y + v.y * tt + 0.5 * g * tt * tt, origin.z + v.z * tt);
-        if (!hit && np.y <= 0) {
-          hit = p.clone().lerp(np, p.y / Math.max(1e-3, p.y - np.y));
-          hit.y = 0;
+        const gy = terrainHeight(np.x, np.z);
+        if (!hit && np.y <= gy) {
+          const gp = terrainHeight(p.x, p.z);
+          hit = p.clone().lerp(np, (p.y - gp) / Math.max(1e-3, (p.y - gp) - (np.y - gy)));
+          hit.y = terrainHeight(hit.x, hit.z);
         }
         const q = hit || np;
         pts.setXYZ(i, q.x, q.y, q.z);
         p = np;
       }
       pts.needsUpdate = true;
-      t.valid = !!hit && Math.hypot(hit.x, hit.z) < ARENA_RADIUS;
+      t.valid = !!hit && Math.hypot(hit.x, hit.z) < this.roamRadius(ARENA_RADIUS);
       if (hit) t.point.copy(hit);
       this.teleportArc.visible = true;
       this.teleportArc.material.color.setHex(t.valid ? 0x4cc3ff : 0xff4d4d);
