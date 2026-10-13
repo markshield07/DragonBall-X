@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { bus } from '../core/events.js';
 import { rand, damp } from '../core/math.js';
-import { Avatar } from '../character/Avatar.js';
+import { createAvatar } from '../character/createAvatar.js';
 import { Aura } from '../fx/Aura.js';
 import { BattleDamage } from '../fx/BattleDamage.js';
 import { CHARACTER_TEMPLATES, defaultCharacter } from '../character/options.js';
@@ -83,7 +83,7 @@ export class Sparring {
       const t = CHARACTER_TEMPLATES.find((x) => x.id === this.level.template) || CHARACTER_TEMPLATES[0];
       ch = { ...defaultCharacter(), ...t.appearance };
     }
-    this.avatar = new Avatar(ch);
+    this.avatar = createAvatar(ch);
     this.group.add(this.avatar.root);
     this.avatar.setForm(this.level.form);
     this.wounds = new BattleDamage(this.avatar.root, this.game, { forward: () => this.group.getWorldDirection(_w), scale: 0.8 });

@@ -70,7 +70,7 @@ export class CharacterCreator {
   }
 
   changed() {
-    this.game.previewAvatar?.apply(this.game.character);
+    if (!this.game.refreshPreviewAvatar()) this.game.previewAvatar?.apply(this.game.character);
     this.panel.dirty = true;
   }
 

@@ -21,7 +21,8 @@ import { BOSSES, bossById } from '../boss/bosses.js';
 import { SpeedFocus, SLOWMO_UNLOCK_LEVEL } from '../player/SpeedFocus.js';
 import { DamageOverlay } from '../fx/DamageOverlay.js';
 import { BattleDamage } from '../fx/BattleDamage.js';
-import { Avatar } from '../character/Avatar.js';
+import { createAvatar, needsNewAvatar } from '../character/createAvatar.js';
+import { loadModel } from '../character/ModelAvatar.js';
 import { defaultCharacter, migrateCharacter } from '../character/options.js';
 import { SaveSystem } from '../save/SaveSystem.js';
 import { loadSettings, GRAPHICS_PRESETS, VISUAL_INTENSITY } from '../settings/Settings.js';
@@ -61,6 +62,7 @@ export class Game {
     this.character = save?.character ? migrateCharacter(save.character) : defaultCharacter();
     this.progress = new Progression(save?.progress);
 
+    loadModel('rokan'); // start downloading the 3D character early
     this.playerAura = new Aura({ radius: 0.95, height: 2.5, firstPerson: true });
     this.renderer.scene.add(this.playerAura.group);
     this.player = new Player(this);
@@ -333,7 +335,7 @@ export class Game {
     this.resetPlayerPosition();
     this.previewForm = 'base';
     this.removePreview();
-    this.previewAvatar = new Avatar(this.character);
+    this.previewAvatar = createAvatar(this.character);
     this.renderer.scene.add(this.previewAvatar.root);
     this.creator.keyboard = false;
     this.creator.panel.show();
@@ -357,6 +359,20 @@ export class Game {
     const forms = FORM_ORDER.filter((id) => FORMS[id].playable);
     this.previewForm = forms[(forms.indexOf(this.previewForm) + 1) % forms.length];
     this.previewAvatar?.setForm(this.previewForm);
+  }
+
+  // The creator switched between a modeled and a procedural look.
+  refreshPreviewAvatar() {
+    if (!this.previewAvatar || !needsNewAvatar(this.previewAvatar, this.character)) return false;
+    const old = this.previewAvatar;
+    this.previewAvatar = createAvatar(this.character);
+    this.previewAvatar.setForm(this.previewForm);
+    this.previewAvatar.root.position.copy(old.root.position);
+    this.previewAvatar.root.quaternion.copy(old.root.quaternion);
+    this.renderer.scene.add(this.previewAvatar.root);
+    this.renderer.scene.remove(old.root);
+    old.dispose();
+    return true;
   }
 
   removePreview() {

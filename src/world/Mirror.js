@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { toon } from '../render/toon.js';
-import { Avatar } from '../character/Avatar.js';
+import { createAvatar } from '../character/createAvatar.js';
 import { Aura } from '../fx/Aura.js';
 import { BattleDamage } from '../fx/BattleDamage.js';
 
@@ -96,7 +96,7 @@ export class Mirror {
       this.reflect.remove(this.avatar.root);
       this.avatar.dispose();
     }
-    this.avatar = new Avatar(character);
+    this.avatar = createAvatar(character);
     this.reflect.add(this.avatar.root);
     this.avatar.setForm(this.game.player?.form || 'base');
     // Your own battle damage shows in the mirror.

@@ -96,7 +96,7 @@ export class BattleDamage {
   meshes() {
     const list = [];
     this.root.traverse((o) => {
-      if (!o.isMesh || !o.material?.isMeshToonMaterial || o.userData.isOutline || o.userData.isDecal) return;
+      if (!o.isMesh || !o.material?.isMeshToonMaterial || o.userData.isOutline || o.userData.isDecal || o.userData.noWounds) return;
       let p = o;
       while (p) { if (!p.visible) return; p = p.parent; }
       list.push(o);
@@ -121,9 +121,10 @@ export class BattleDamage {
       const i0 = idx ? idx.getX(t * 3) : t * 3;
       const i1 = idx ? idx.getX(t * 3 + 1) : t * 3 + 1;
       const i2 = idx ? idx.getX(t * 3 + 2) : t * 3 + 2;
-      _a.fromBufferAttribute(pos, i0).applyMatrix4(mesh.matrixWorld);
-      _b.fromBufferAttribute(pos, i1).applyMatrix4(mesh.matrixWorld);
-      _c.fromBufferAttribute(pos, i2).applyMatrix4(mesh.matrixWorld);
+      // Skinned meshes: use the posed (skinned) positions.
+      mesh.getVertexPosition(i0, _a).applyMatrix4(mesh.matrixWorld);
+      mesh.getVertexPosition(i1, _b).applyMatrix4(mesh.matrixWorld);
+      mesh.getVertexPosition(i2, _c).applyMatrix4(mesh.matrixWorld);
       const area = _x.subVectors(_b, _a).cross(_y.subVectors(_c, _a)).length();
       if (area < 1e-6) continue;
       _n.subVectors(_b, _a).cross(_y.subVectors(_c, _a)).normalize();
@@ -132,7 +133,7 @@ export class BattleDamage {
       const p = _a.clone().multiplyScalar(1 - u - v).addScaledVector(_b, u).addScaledVector(_c, v);
       if (p.y < this.minY) continue;
       const score = (fwd ? _n.dot(fwd) : 0) + Math.sqrt(area) * 2 + Math.random() * 0.3;
-      if (score > bestScore) { bestScore = score; best = { mesh, point: p, normal: _n.clone() }; }
+      if (score > bestScore) { bestScore = score; best = { mesh, point: p, normal: _n.clone(), vertex: i0 }; }
     }
     return best;
   }
@@ -175,6 +176,15 @@ export class BattleDamage {
     mesh.quaternion.copy(_q);
     mesh.updateMatrixWorld();
     s.mesh.attach(mesh);
+    // Skinned body: ride on the bone that moves that spot the most.
+    if (s.mesh.isSkinnedMesh) {
+      const si = s.mesh.geometry.attributes.skinIndex;
+      const sw = s.mesh.geometry.attributes.skinWeight;
+      let bi = 0; let bw = -1;
+      for (let k = 0; k < 4; k++) { const w = sw.getComponent(s.vertex, k); if (w > bw) { bw = w; bi = si.getComponent(s.vertex, k); } }
+      const bone = s.mesh.skeleton.bones[bi];
+      if (bone) bone.attach(mesh);
+    }
     this.decals.push(mesh);
   }
 }
