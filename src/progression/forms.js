@@ -9,11 +9,15 @@
 // plMultiplier: multiplies your Power Level while in the form. Kept to
 // simple, readable steps (x2 up to x10) so numbers stay in the thousands
 // to low millions instead of running off into the billions.
+// physique: how the body changes in the form. Region values are how far
+// (meters) the muscles swell along the skin; waist < 0 tightens it. height
+// scales the whole body; ripped (0..1+) deepens the muscle definition.
 // damage/speed/kiDamage: real combat multipliers (kept modest for balance).
 // kiDrain: ki per second while sustaining the form (before mastery reductions).
 export const FORMS = {
   base: {
     id: 'base',
+    physique: { look: 'Normal', chest: 0, traps: 0, arms: 0, forearms: 0, thighs: 0, calves: 0, waist: 0, height: 1, ripped: 0 },
     name: 'Base Saiyan',
     playable: true,
     plMultiplier: 1,
@@ -31,6 +35,8 @@ export const FORMS = {
   },
   ssj1: {
     id: 'ssj1',
+    // Pumped: everything a little fuller, a bit more muscle definition.
+    physique: { look: 'Pumped up', chest: 0.018, traps: 0.015, arms: 0.016, forearms: 0.009, thighs: 0.011, calves: 0.006, waist: 0, height: 1.01, ripped: 0.4 },
     name: 'Super Saiyan',
     playable: true,
     plMultiplier: 2,
@@ -43,11 +49,14 @@ export const FORMS = {
     aura: { color: 0xffc21a, core: 0xfff3a0, scale: 1.0, opacity: 0.75, lightning: false },
     hair: { colorOverride: 0xffd21f, lift: 0.55, lengthScale: 1.12, extraLong: false },
     eyes: 0x1fb5a8,
+    body: { muscle: 1.05 },
     sound: 'ssj1',
     unlock: { powerLevel: 5000, label: 'Reach Power Level 5,000' },
   },
   ssj2: {
     id: 'ssj2',
+    // Ripped: same size, tighter waist, sharp shredded definition.
+    physique: { look: 'Ripped', chest: 0.016, traps: 0.02, arms: 0.016, forearms: 0.011, thighs: 0.011, calves: 0.007, waist: -0.02, height: 1.015, ripped: 1 },
     name: 'Super Saiyan 2',
     playable: true,
     plMultiplier: 3,
@@ -60,11 +69,14 @@ export const FORMS = {
     aura: { color: 0xffd23a, core: 0xffffff, scale: 1.2, opacity: 0.85, lightning: true },
     hair: { colorOverride: 0xffdf3a, lift: 0.75, lengthScale: 1.2, extraLong: false, sharp: true },
     eyes: 0x1fb5a8,
+    body: { muscle: 1.05 },
     sound: 'ssj2',
     unlock: { powerLevel: 12000, boss: 'raxor', label: 'Defeat Raxor or reach Power Level 12,000' },
   },
   ssj3: {
     id: 'ssj3',
+    // Bulky: huge traps, chest and arms.
+    physique: { look: 'Bulky', chest: 0.036, traps: 0.04, arms: 0.034, forearms: 0.02, thighs: 0.024, calves: 0.013, waist: 0.004, height: 1.03, ripped: 0.6 },
     name: 'Super Saiyan 3',
     playable: true,
     plMultiplier: 4,
@@ -77,11 +89,14 @@ export const FORMS = {
     aura: { color: 0xffcf1a, core: 0xffffff, scale: 1.6, opacity: 0.9, lightning: true },
     hair: { colorOverride: 0xffd21f, lift: 0.3, lengthScale: 1.25, extraLong: true },
     eyes: 0x1fb5a8,
+    body: { muscle: 1.14 },
     sound: 'ssj3',
     unlock: { powerLevel: 25000, boss: 'veyron', label: 'Defeat Lord Veyron or reach Power Level 25,000' },
   },
   ssj4: {
     id: 'ssj4',
+    // Primal: lean and wiry, wide shoulders over a narrow waist.
+    physique: { look: 'Lean and wild', chest: 0.018, traps: 0.024, arms: 0.02, forearms: 0.015, thighs: 0.016, calves: 0.01, waist: -0.024, height: 1.02, ripped: 1.1 },
     name: 'Super Saiyan 4',
     playable: true,
     plMultiplier: 6,
@@ -94,12 +109,14 @@ export const FORMS = {
     aura: { color: 0xff3a2a, core: 0xffd060, scale: 1.5, opacity: 0.85, lightning: false },
     hair: { colorOverride: 0x111111, lift: 0.2, lengthScale: 1.35, extraLong: false, wild: true },
     eyes: 0xffc400,
-    body: { fur: 0xb3202a, tail: true, muscle: 1.2 },
+    body: { fur: 0xb3202a, tail: true, muscle: 1.1 },
     sound: 'ssj4',
     unlock: { powerLevel: 45000, boss: 'kurog', label: 'Defeat Titan Kurog or reach Power Level 45,000' },
   },
   ssj5: {
     id: 'ssj5',
+    // Titan: the biggest, heaviest build.
+    physique: { look: 'Titan', chest: 0.046, traps: 0.05, arms: 0.044, forearms: 0.026, thighs: 0.034, calves: 0.019, waist: 0.003, height: 1.05, ripped: 0.9 },
     name: 'Super Saiyan 5',
     playable: true,
     plMultiplier: 10,
@@ -113,7 +130,7 @@ export const FORMS = {
     hair: { colorOverride: 0x2fa8ff, lift: 0.6, lengthScale: 1.3, extraLong: false },
     eyes: 0x6fe0ff,
     eyesGlow: true,
-    body: { muscle: 1.15 },
+    body: { muscle: 1.2 },
     sound: 'ssj5',
     unlock: { powerLevel: 80000, boss: 'zareth', label: 'Defeat Emperor Zareth or reach Power Level 80,000' },
   },

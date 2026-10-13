@@ -3,6 +3,7 @@ import { toonUnique, addOutline, outlineExtrudeMaterial, glowMaterial, softCircl
 import { forearm as forearmGeometry } from '../character/anatomy.js';
 import { SKIN_TONES, paletteColor, buildOf } from '../character/options.js';
 import { damp } from '../core/math.js';
+import { FORMS } from '../progression/forms.js';
 
 const _v = new THREE.Vector3();
 
@@ -98,12 +99,24 @@ export class Hands {
     // Titan armor and the tank top leave the forearms bare; the build
     // preset thickens or slims the first-person forearms and fists.
     const sleeve = character.outfit === 'gi' || character.outfit === 'jacket';
-    const k = buildOf(character).limb * (character.body === 'female' ? 0.9 : 1);
+    this.buildK = buildOf(character).limb * (character.body === 'female' ? 0.9 : 1);
     for (const h of Object.values(this.hands)) {
       h.sleeve.visible = sleeve;
       h.fist.material = gloved ? this.gloveMat : this.skinMat;
       h.handWrap.visible = !gloved;
       h.band.material = gloved ? this.cuffMat : this.bandMat;
+    }
+    this.applyArmSize();
+  }
+
+  // Your forearms swell with the form's muscles (see FORMS[*].physique).
+  setForm(formId) {
+    this.armTarget = 1 + (FORMS[formId]?.physique?.forearms || 0) * 5;
+  }
+
+  applyArmSize() {
+    const k = (this.buildK || 1) * (this.armSize || 1);
+    for (const h of Object.values(this.hands)) {
       h.arm.scale.set(k, k, 1);
       h.fist.scale.setScalar(0.92 + 0.08 * k);
     }
@@ -115,6 +128,11 @@ export class Hands {
 
   // Follow input; compute velocity. Returns nothing; read this.hands.
   update(dt, inputState, rigQuat) {
+    const want = this.armTarget || 1;
+    if (Math.abs((this.armSize || 1) - want) > 1e-4) {
+      this.armSize = damp(this.armSize || 1, want, 5, dt);
+      this.applyArmSize();
+    }
     for (const side of ['left', 'right']) {
       const h = this.hands[side];
       const hs = inputState.hands[side];

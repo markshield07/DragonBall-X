@@ -213,6 +213,7 @@ export class Transformation {
     const f = FORMS[id];
     this.game.mirror?.setForm(id);
     this.game.playerBody?.setForm(id);
+    this.game.hands?.setForm?.(id);
     bus.emit('form:changed', { form: id, prev });
     if (id === 'base') this.game.playerAura.setStyle({ color: f.aura.color, core: f.aura.core, scale: f.aura.scale });
   }

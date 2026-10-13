@@ -668,7 +668,7 @@ export class Game {
     });
     bus.on('transform:burst', ({ form, first }) => {
       const f = FORMS[form];
-      this.banner.push({ title: f.name.toUpperCase() + '!', subtitle: first ? 'You have awakened the legendary power!' : `Power Level ${formatNumber(this.currentPowerLevel())}`, color: '#ffcc33', duration: first ? 3.5 : 2, big: true, priority: true });
+      this.banner.push({ title: f.name.toUpperCase() + '!', subtitle: first ? `Legendary power awakened! Your body: ${f.physique?.look || 'stronger'}` : `${f.physique?.look || ''} · Power Level ${formatNumber(this.currentPowerLevel())}`, color: '#ffcc33', duration: first ? 3.5 : 2, big: true, priority: true });
       if (first) setTimeout(() => this.audio.fanfare(), 600);
       if (this.state === 'boss' && this.boss.active) {
         this.boss.say(this.boss.powerRatio() > 1 ? 'What?! Your power… it\'s skyrocketing!' : 'A golden aura? It\'s just a trick!', '#ffb0b0');

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { toonUnique, outlineExtrudeMaterial } from '../render/toon.js';
+import { toonUnique } from '../render/toon.js';
 import { FORMS } from '../progression/forms.js';
 import { SKIN_TONES, HAIR_COLORS, EYE_COLORS, CHARACTER_TEMPLATES, BUILDS, paletteColor, buildOf, scouterOf } from './options.js';
 import { buildScouter } from './Scouter.js';
@@ -74,6 +74,17 @@ function skinRamp() {
   return ramp;
 }
 
+// Ripped forms: harder light/shadow steps so every muscle edge reads.
+let rippedRamp = null;
+function rippedSkinRamp() {
+  if (rippedRamp) return rippedRamp;
+  rippedRamp = new THREE.DataTexture(new Uint8Array([45, 95, 160, 225, 255]), 5, 1, THREE.RedFormat);
+  rippedRamp.minFilter = rippedRamp.magFilter = THREE.NearestFilter;
+  rippedRamp.generateMipmaps = false;
+  rippedRamp.needsUpdate = true;
+  return rippedRamp;
+}
+
 // Flat face layers: unlit, no outline, no wounds.
 const FACE_PARTS = ['EyeWhite', 'Iris', 'Pupil', 'Highlight', 'Brow', 'Lash'];
 
@@ -97,6 +108,53 @@ const _pole = new THREE.Vector3();
 const _e = new THREE.Vector3();
 const _m = new THREE.Matrix4();
 
+// Transformation physique: muscles swell along the skin by region (see
+// FORMS[*].physique). Each region lists the bones whose skin it moves; the
+// number is how much of the region's value that bone gets.
+const PHYSIQUE_REGIONS = {
+  chest: { spine_03: 1, spine_02: 0.35 },
+  traps: { neck_01: 0.8, clavicle_l: 1, clavicle_r: 1 },
+  arms: { upperarm_l: 1, upperarm_r: 1 },
+  forearms: { lowerarm_l: 1, lowerarm_r: 1 },
+  thighs: { thigh_l: 1, thigh_r: 1 },
+  calves: { calf_l: 1, calf_r: 1 },
+  waist: { spine_01: 1, spine_02: 0.5 },
+};
+const PHYSIQUE_KEYS = ['chest', 'traps', 'arms', 'forearms', 'thighs', 'calves', 'waist', 'height', 'ripped'];
+const MAX_BONES = 64;
+const PUMP_TIME = 0.9; // seconds for the muscles to swell into a new form
+
+// Push skinned vertices out along their normals by a per-bone amount
+// (uInflate, indexed like skeleton.bones), blended by the skin weights.
+function addInflate(m, uniform) {
+  const prev = m.onBeforeCompile;
+  const prevKey = m.customProgramCacheKey;
+  m.onBeforeCompile = (sh, r) => {
+    prev?.call(m, sh, r);
+    sh.uniforms.uInflate = uniform;
+    sh.vertexShader = sh.vertexShader
+      .replace('void main() {', `uniform float uInflate[${MAX_BONES}];\nvoid main() {`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+#ifdef USE_SKINNING
+  transformed += normalize(normal) * (uInflate[int(skinIndex.x)] * skinWeight.x + uInflate[int(skinIndex.y)] * skinWeight.y + uInflate[int(skinIndex.z)] * skinWeight.z + uInflate[int(skinIndex.w)] * skinWeight.w);
+#endif`);
+  };
+  m.customProgramCacheKey = () => `${prevKey ? prevKey.call(m) : ''}-inflate`;
+  return m;
+}
+
+// Ink outline (back faces pushed out along the normal) that also swells
+// with the muscles, so the line stays on the skin.
+function inflatedOutline(thickness, uniform) {
+  const m = new THREE.MeshBasicMaterial({ color: 0x14100c, side: THREE.BackSide });
+  const key = thickness.toFixed(4);
+  m.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>\n  transformed += normalize(normal) * ${key};`);
+  };
+  m.customProgramCacheKey = () => `outline-extrude-${key}`;
+  return addInflate(m, uniform);
+}
+
 function expDamp(a, b, lambda, dt) { return b + (a - b) * Math.exp(-lambda * dt); }
 
 export class ModelAvatar {
@@ -110,6 +168,9 @@ export class ModelAvatar {
     this.formId = 'base';
     this.character = { ...character };
     this.mats = {};
+    this.inflate = { value: new Float32Array(MAX_BONES) };
+    this.physique = { ...FORMS.base.physique };
+    this.baseScale = 1;
     this.parts = {}; // material name -> [meshes]
     this.bones = null;
     this.ready = false;
@@ -145,7 +206,7 @@ export class ModelAvatar {
     });
     // Ink outlines: the same skinned geometry, back faces pushed out.
     for (const o of outlines) {
-      const line = new THREE.SkinnedMesh(o.geometry, outlineExtrudeMaterial(o.material.name?.startsWith('Hair') ? 0.006 : 0.004));
+      const line = new THREE.SkinnedMesh(o.geometry, inflatedOutline(o.material.name?.startsWith('Hair') ? 0.006 : 0.004, this.inflate));
       line.bind(o.skeleton, o.bindMatrix);
       line.userData.isOutline = true;
       line.frustumCulled = false;
@@ -167,6 +228,19 @@ export class ModelAvatar {
     for (const side of ['left', 'right']) {
       this.relPos(this.chain[side].upper, this.arms[side].shoulder).divideScalar(this.body.scale.x);
     }
+    // Skeleton slot of every bone the physique moves.
+    const skel = this.parts.Skin?.[0]?.skeleton || outlines[0]?.skeleton;
+    this.physBones = {};
+    for (const [region, bones] of Object.entries(PHYSIQUE_REGIONS)) {
+      this.physBones[region] = [];
+      for (const [name, w] of Object.entries(bones)) {
+        const i = skel ? skel.bones.findIndex((bn) => bn.name === name) : -1;
+        if (i >= 0 && i < MAX_BONES) this.physBones[region].push([i, w]);
+      }
+    }
+    // Ease into a new form's physique while the model is drawn.
+    const driver = this.parts.Skin?.[0] || outlines[0];
+    if (driver) driver.onBeforeRender = () => this.updatePhysique();
     this.ready = true;
     this.apply(this.character);
     this.poseArms();
@@ -187,6 +261,7 @@ export class ModelAvatar {
       m.gradientMap = skinRamp();
     }
     if (name.startsWith('Sash')) m.side = THREE.DoubleSide;
+    if (!basic) addInflate(m, this.inflate);
     this.mats[name] = m;
     return m;
   }
@@ -470,7 +545,8 @@ export class ModelAvatar {
     const t = CHARACTER_TEMPLATES.find((x) => x.id === this.modelId);
     const base = BUILDS.find((b) => b.id === t?.appearance.build)?.height ?? 1;
     const nudge = THREE.MathUtils.clamp(buildOf(c).height / base, 0.9, 1.1);
-    this.body.scale.setScalar((model.height / BUILT_HEIGHT) * nudge);
+    this.baseScale = (model.height / BUILT_HEIGHT) * nudge;
+    this.body.scale.setScalar(this.baseScale * (this.physique.height || 1));
     if (!this.ready) return;
     const set = (name, hex) => this.mats[name]?.color.setHex(hex);
     set('Skin', SKIN_TONES[c.skin % SKIN_TONES.length].color);
@@ -537,7 +613,42 @@ export class ModelAvatar {
       m.emissiveIntensity = glowing ? 0.35 : 0;
     }
     if (f.body?.fur) this.mats.Fur?.color.setHex(f.body.fur);
+    // The body changes shape: ease (with a pump past the target when
+    // growing) from what it is now, or snap on the first setup.
+    const to = f.physique || FORMS.base.physique;
+    if (this.physTo !== to) {
+      this.physFrom = this.physInit ? { ...this.physique } : { ...to };
+      this.physTo = to;
+      this.physStart = performance.now();
+      this.physInit = true;
+      this.updatePhysique();
+    }
     this.mats.Iris?.color.setHex(f.eyes ?? EYE_COLORS[c.eyeColor % EYE_COLORS.length].color);
+  }
+
+  // Current physique (blended toward the form's), written into the inflate
+  // uniform, the body height and the skin's muscle definition.
+  updatePhysique() {
+    const to = this.physTo;
+    if (!to || !this.physBones) return;
+    const t = Math.min(1, (performance.now() - this.physStart) / (PUMP_TIME * 1000));
+    if (t >= 1 && this.physDone === to) return;
+    const ease = 1 - Math.pow(1 - t, 3);
+    const pump = Math.sin(Math.PI * Math.min(1, t * 1.25)) * 0.35 * (1 - t);
+    const p = this.physique;
+    for (const k of PHYSIQUE_KEYS) {
+      const a = this.physFrom[k] ?? (k === 'height' ? 1 : 0);
+      const b = to[k] ?? (k === 'height' ? 1 : 0);
+      p[k] = a + (b - a) * ease + (b > a && k !== 'height' ? (b - a) * pump : 0);
+    }
+    const inf = this.inflate.value;
+    inf.fill(0);
+    for (const [region, list] of Object.entries(this.physBones)) for (const [i, w] of list) inf[i] += (p[region] || 0) * w;
+    this.body.scale.setScalar(this.baseScale * (p.height || 1));
+    const skin = this.mats.Skin;
+    if (skin?.normalMap) skin.normalScale.setScalar(2 + 2.4 * (p.ripped || 0));
+    if (skin) skin.gradientMap = (p.ripped || 0) >= 0.8 ? rippedSkinRamp() : skinRamp();
+    if (t >= 1) this.physDone = to;
   }
 
   dispose() {
