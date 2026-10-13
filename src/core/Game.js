@@ -848,7 +848,7 @@ export class Game {
     if (fighting) this.handWounds.update(dt, hpFrac);
     else if (this.handWounds.decals.length) this.handWounds.reset();
     this.damageOverlay.update(dt, { healthFrac: fighting ? hpFrac : 1, enabled: this.settings.battleDamage !== false, slow: this.arena.slow });
-    this.audio.beamCharge(this.player.beam.charging ? this.player.beam.charge : Math.min(1.2, this.player.blastPower() * 0.3));
+    this.audio.beamCharge(this.player.beam.charging && !this.player.beam.over ? this.player.beam.charge : Math.min(1.2, this.player.blastPower() * 0.3));
     this.updateActionButtons();
     this.mirror.update(dt);
     // Your body: legs that walk and hang in the air; desktop P = behind view.

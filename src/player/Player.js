@@ -20,8 +20,9 @@ const MAX_ALTITUDE = 300;
 // The player: resources (health / ki / stamina), locomotion & comfort,
 // punching, ki attacks, blocking, and how damage is taken. Reads the unified
 // input state, so VR and desktop share every rule here.
-// Charged Ki Blast overcharge: after a full charge, every OVERCHARGE_STAGE_TIME
-// seconds of holding grows it one level (up to OVERCHARGE_STAGES), burning ki.
+// Overcharge (Charged Ki Blast and the beams): after a full charge, every
+// OVERCHARGE_STAGE_TIME seconds of holding grows it one level (up to
+// OVERCHARGE_STAGES), burning ki.
 const OVERCHARGE_STAGES = 4;
 const OVERCHARGE_STAGE_TIME = 1.2;
 const OVERCHARGE_KI_PER_SEC = 7;
@@ -499,7 +500,7 @@ export class Player {
   // How charged the held Charged Ki Blast is: 0..1 charging, then 1 + overcharge.
   blastPower() {
     const f = this.fire;
-    return Math.max((f.left.charge || 0) + (f.left.over || 0), (f.right.charge || 0) + (f.right.over || 0));
+    return Math.max(this.beam.charging ? this.beam.charge + (this.beam.over || 0) : 0, (f.left.charge || 0) + (f.left.over || 0), (f.right.charge || 0) + (f.right.over || 0));
   }
 
   activateKaioken(atk) {
@@ -543,24 +544,47 @@ export class Player {
         b.warned = true;
         return;
       }
-      if (!b.charging) { b.charging = true; b.charge = 0; bus.emit('beam:charge', { attack: atk }); }
+      if (!b.charging) { b.charging = true; b.charge = 0; b.over = 0; b.stage = 0; bus.emit('beam:charge', { attack: atk }); }
       b.hand = rp ? 'right' : 'left';
       b.both = together;
       const chargeTime = atk.chargeTime / (1 + 0.06 * (this.progress.level('ki') - 1));
       b.charge = clamp(b.charge + dt / chargeTime, 0, 1);
+      // Fully charged and still holding: the beam keeps building, up to
+      // OVERCHARGE_STAGES more levels, burning ki (never below its cost).
+      if (b.charge >= 1 && b.over < OVERCHARGE_STAGES && this.ki > atk.kiCost + 1) {
+        b.over = Math.min(OVERCHARGE_STAGES, b.over + dt / OVERCHARGE_STAGE_TIME);
+        this.ki = Math.max(0, this.ki - OVERCHARGE_KI_PER_SEC * 1.3 * dt);
+      }
+      const stage = Math.floor(b.over + 1e-6);
+      if (stage > b.stage) {
+        b.stage = stage;
+        const max = stage >= OVERCHARGE_STAGES;
+        bus.emit('hud:message', { text: max ? `MAXIMUM ${atk.name.toUpperCase()}! Let it go!` : `Power level ${stage + 1}! Keep holding!`, color: max ? '#ff5a3a' : '#7fd8ff' });
+        this.game.haptic('left', 0.6 + 0.1 * stage, 120);
+        this.game.haptic('right', 0.6 + 0.1 * stage, 120);
+      }
+      const over = b.over;
+      const dir = this.beamDir(input, b, _w);
       if (together) b.origin.addVectors(hl.worldPos, hr.worldPos).multiplyScalar(0.5);
       else b.origin.copy(hands.hands[b.hand].worldPos);
-      b.origin.addScaledVector(this.beamDir(input, b, _v), 0.08);
-      const r = 0.05 + 0.12 * b.charge;
+      const r = (0.05 + 0.12 * b.charge) * (1 + 0.4 * over);
+      // The ball moves out (and a little low) as it grows, so you can still aim.
+      b.origin.addScaledVector(dir, 0.08 + r * 0.9 + 0.08 * over);
+      b.origin.y -= r * 0.3;
+      const shake = over > 0 ? Math.sin(performance.now() * 0.047) * 0.012 * over : 0;
       this.chargeOrb.visible = true;
       this.chargeOrb.material.color.setHex(atk.color);
-      this.chargeOrb.position.copy(b.origin);
-      this.chargeOrb.scale.setScalar(r * (1 + Math.sin(performance.now() * 0.03) * 0.08));
-      if (Math.random() < 0.7) {
+      this.chargeOrb.position.copy(b.origin).add(_v.set(shake, -shake * 0.5, 0));
+      this.chargeOrb.scale.setScalar(r * (1 + Math.sin(performance.now() * 0.03) * (0.08 + 0.03 * over)));
+      // Energy pulled into the ball, wider and thicker as it grows.
+      for (let i = 0; i < 1 + Math.floor(over * 1.5); i++) {
+        if (Math.random() > 0.7) continue;
         const a = Math.random() * Math.PI * 2;
-        this.game.effects.stream(_w.copy(b.origin).add(_v.set(Math.cos(a) * 0.25, Math.sin(a) * 0.25, 0)), atk.color, { vy: 0, spread: 0.02, size: 0.03, life: 0.2 });
+        const d = 0.25 + r * (1.5 + 0.4 * over);
+        this.game.effects.stream(_v.copy(b.origin).add(_w.set(Math.cos(a) * d, Math.sin(a) * d, (Math.random() - 0.5) * d)), atk.color, { vy: 0, spread: 0.02, size: 0.03 + 0.02 * over, life: 0.25 });
       }
-      if (Math.random() < 0.3) { this.game.haptic('left', 0.2 + 0.5 * b.charge, 25); this.game.haptic('right', 0.2 + 0.5 * b.charge, 25); }
+      if (over > 0 && Math.random() < 0.15 * over) this.game.effects.burst?.(b.origin.clone(), 0xffffff, 3, 2 + over, 0.03, 0.2);
+      if (Math.random() < 0.3 + 0.1 * over) { this.game.haptic('left', Math.min(1, 0.2 + 0.5 * b.charge + 0.1 * over), 25); this.game.haptic('right', Math.min(1, 0.2 + 0.5 * b.charge + 0.1 * over), 25); }
       // VR gesture: both hands together, pushed forward = fire.
       if (together && b.charge > 0.5 && this.game.isXR) {
         const push = (hl.vel.dot(this.headForward) + hr.vel.dot(this.headForward)) / 2;
@@ -590,10 +614,14 @@ export class Player {
     const cost = atk.kiCost * (0.5 + 0.5 * b.charge);
     if (this.ki < cost) { bus.emit('ki:empty', {}); b.cooldown = 0.5; return; }
     this.ki -= cost;
-    const duration = atk.duration * (0.6 + 0.4 * b.charge);
-    const total = atk.damage * this.progress.kiMult() * this.kiDamageMult() * (0.45 + 0.55 * b.charge) * (b.both ? 1.15 : 1);
+    // Overcharged (held past full): longer, wider, stronger, and it blows up
+    // far bigger where it lands.
+    const over = b.over || 0;
+    const duration = atk.duration * (0.6 + 0.4 * b.charge) * (1 + 0.25 * over);
+    const total = atk.damage * this.progress.kiMult() * this.kiDamageMult() * (0.45 + 0.55 * b.charge) * (b.both ? 1.15 : 1) * (1 + 0.6 * over);
     const kiLv = this.progress.level('ki');
-    const radius = atk.beamRadius * (0.6 + 0.4 * b.charge) * (1 + 0.04 * (kiLv - 1)) * (this.form !== 'base' ? 1.25 : 1);
+    const radius = atk.beamRadius * (0.6 + 0.4 * b.charge) * (1 + 0.04 * (kiLv - 1)) * (this.form !== 'base' ? 1.25 : 1) * (1 + 0.25 * over);
+    if (over >= 2) bus.emit('hud:message', { text: over >= OVERCHARGE_STAGES ? `MAXIMUM ${atk.name.toUpperCase()}!` : `HUGE ${atk.name.toUpperCase()}!`, color: '#7fd8ff' });
     const hands = this.game.hands.hands;
     this.game.combat.fireBeam({
       origin: (out) => {
@@ -604,8 +632,11 @@ export class Player {
       dir: (out) => this.beamDir(this.game.lastInput || input, b, out),
       duration, dps: total / duration, radius, color: atk.color, team: 'player',
       // Explosion size: the Ultimate beam outdoes Kamehameha / Galick Gun; charge and transformations add more.
-      energy: (atk.id === 'ultimateBeam' ? 7 : 5) * (0.55 + 0.45 * b.charge) * (this.form !== 'base' ? 1.1 : 1),
+      energy: Math.min(9.5, (atk.id === 'ultimateBeam' ? 7 : 5) * (0.55 + 0.45 * b.charge) * (this.form !== 'base' ? 1.1 : 1) * (1 + 0.22 * over)),
+      over,
     });
+    b.over = 0;
+    b.stage = 0;
     b.cooldown = atk.cooldown;
     bus.emit('beam:fired', { attack: atk, charge: b.charge, both: b.both });
   }

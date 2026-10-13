@@ -40,13 +40,13 @@ export const ATTACKS = {
     id: 'kamehameha', name: 'Kamehameha', implemented: true, level: 2, type: 'beam',
     damage: 120, kiCost: 45, chargeTime: 1.6, cooldown: 5, color: 0x4fc3ff, beamRadius: 0.3, duration: 1.4,
     unlock: { stat: ['ki', 4], boss: 'raxor', label: 'Ki level 4 or defeat Raxor' },
-    effects: 'Bring both hands together, charge, push forward to unleash a beam.',
+    effects: 'Bring both hands together, charge, push forward to unleash a beam. Keep holding after it is full and it grows bigger and bigger (uses ki).',
   },
   galickGun: {
     id: 'galickGun', name: 'Galick Gun', implemented: true, level: 2, type: 'beam',
     damage: 110, kiCost: 40, chargeTime: 1.3, cooldown: 5, color: 0xb44dff, beamRadius: 0.28, duration: 1.2,
     unlock: { stat: ['ki', 6], boss: 'veyron', label: 'Ki level 6 or defeat Lord Veyron' },
-    effects: 'Purple two-handed beam that charges faster.',
+    effects: 'Purple two-handed beam that charges faster. Keep holding to make it bigger.',
   },
   kaioken: {
     id: 'kaioken', name: 'Kaio-ken Power Boost', implemented: true, level: 2, type: 'buff',
@@ -70,7 +70,7 @@ export const ATTACKS = {
     id: 'ultimateBeam', name: 'Ultimate Blue Energy Beam', implemented: true, level: 4, type: 'beam',
     damage: 600, kiCost: 70, chargeTime: 2, cooldown: 8, color: 0x3fb6ff, beamRadius: 0.5, duration: 1.8, form: 'ssj5',
     unlock: { form: 'ssj5', label: 'Unlock Super Saiyan 5 (usable in that form)' },
-    effects: 'The final form\'s exclusive beam.',
+    effects: 'The final form\'s exclusive beam. Keep holding to make it bigger.',
   },
 };
 

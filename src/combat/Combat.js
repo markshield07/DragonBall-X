@@ -45,8 +45,8 @@ export class Combat {
   // A continuous beam that follows origin()/dir() callbacks, hits the first
   // enemy target along it and deals `dps` in short ticks.
   // `energy` sizes the explosions where it lands (see Explosions.js).
-  fireBeam({ origin, dir, duration, dps, radius, color, team = 'player', energy = 2.5 }) {
-    this.playerBeam = { origin, dir, duration, t: 0, dps, radius, color, team, energy, tick: 0, boom: 0, o: new THREE.Vector3(), d: new THREE.Vector3(), impact: null };
+  fireBeam({ origin, dir, duration, dps, radius, color, team = 'player', energy = 2.5, over = 0 }) {
+    this.playerBeam = { origin, dir, duration, t: 0, dps, radius, color, team, energy, over, tick: 0, boom: 0, o: new THREE.Vector3(), d: new THREE.Vector3(), impact: null };
     this.beamOuter.material.color.setHex(color);
     this.beamMid.material.color.setHex(color);
     this.beamTip.material.color.setHex(color);
@@ -98,15 +98,17 @@ export class Combat {
     const reach = Math.min(len, b.t * 60);
     const r = b.radius * k * (1 + Math.sin(b.t * 50) * 0.06);
     this.beamGroup.visible = true;
-    this.beamGroup.position.copy(o);
-    this.beamGroup.lookAt(_b.copy(o).add(d));
-    this.beamOuter.scale.set(r, r, reach);
-    this.beamMid.scale.set(r * 0.7, r * 0.7, reach);
-    this.beamCore.scale.set(r * 0.38, r * 0.38, reach);
+    // A wide beam starts a little out from the hands so it doesn't fill your eyes.
+    const start = Math.min(reach * 0.5, Math.max(0, r - 0.3) * 1.5);
+    this.beamGroup.position.copy(o).addScaledVector(d, start);
+    this.beamGroup.lookAt(_b.copy(this.beamGroup.position).add(d));
+    this.beamOuter.scale.set(r, r, reach - start);
+    this.beamMid.scale.set(r * 0.7, r * 0.7, reach - start);
+    this.beamCore.scale.set(r * 0.38, r * 0.38, reach - start);
     this.beamTip.visible = true;
     this.beamTip.position.copy(o).addScaledVector(d, reach);
     this.beamTip.scale.setScalar(r * (hitT && reach >= len ? 7 : 3));
-    if (Math.random() < 0.8) this.fx.stream(o, b.color, { vy: 0, spread: r * 0.8, size: r * 0.6, life: 0.2 });
+    if (Math.random() < 0.8) this.fx.stream(o, b.color, { vy: 0, spread: Math.min(0.3, r * 0.8), size: Math.min(0.25, r * 0.6), life: 0.2 });
     // Where it lands, the beam keeps blowing up: rolling explosions, rocks
     // and a gouge burnt along the line of the beam.
     b.boom -= dt;
@@ -118,7 +120,7 @@ export class Combat {
         b.boom = 0.2;
         // Rolling blasts burn and plough the ground along the beam; only the
         // finale of a big beam digs a crater.
-        this.fx.explosion(point, b.color, b.energy * 0.38, d);
+        this.fx.explosion(point, b.color, Math.min(3.2, b.energy * 0.38), d);
       }
     }
     b.tick -= dt;
@@ -140,6 +142,12 @@ export class Combat {
       const at = b.impact || _b.copy(b.o).addScaledVector(b.d, Math.min(45, b.t * 60));
       this.fx.explosion(at, b.color, b.energy, b.d);
       this.fx.flash(at, 0xffffff, 2 + b.energy * 2, 0.35);
+      // Overcharged: extra shockwaves that roll out across the land.
+      if (b.over >= 1) {
+        this.fx.ring(at.clone(), 0xffffff, { maxRadius: 6 + 3 * b.energy, duration: 1.0, opacity: 0.8 });
+        this.fx.ring(at.clone(), b.color, { maxRadius: 10 + 5 * b.energy, duration: 1.6, opacity: 0.5 });
+        if (b.over >= 3) this.fx.flash(at, b.color, 4 + b.energy * 3, 0.6);
+      }
       bus.emit('projectile:explode', { position: at.clone(), charged: true, team: b.team, kind: 'beam', energy: b.energy });
     }
     this.playerBeam = null;
