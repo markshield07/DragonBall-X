@@ -318,7 +318,7 @@ export class ModelAvatar {
     set('Band', paletteColor(c.armorColor));
     set('Wrap', paletteColor(c.suitColor));
     set('Glove', paletteColor(c.gloveColor));
-    set('Sandal', paletteColor(c.bootColor));
+    set('Shoe', paletteColor(c.bootColor));
     set('Sash', paletteColor(c.beltColor));
     set('EyeWhite', 0xf4f1ea);
     set('Pupil', 0x05070c);

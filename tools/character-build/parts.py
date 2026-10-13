@@ -121,21 +121,70 @@ for s in 'lr':
         f = list(f); return (t[f].min() > 0.8) and (t[f].max() < 1.0) and lw[f].min() > 0.5
     shell(f'Cuff_{s}', cuff_face, lambda idx: np.full(len(idx), 0.009), material('Band', srgb(0xb3202a)))
 
-# ---- Ankle wraps and black sandals ----
+# ---- Ankle wraps and closed black shoes ----
 foot_w = wsum('foot_l', 'foot_r', 'ball_l', 'ball_r')
 calf_w = wsum('calf_l', 'calf_r')
 def wrap_face(f):
-    f = list(f); return z[f].min() > ANK - 0.03 and z[f].max() < PANT_BOT + 0.02 and (calf_w[f] + foot_w[f]).min() > 0.5
+    f = list(f); return z[f].min() > ANK - 0.015 and z[f].max() < PANT_BOT + 0.02 and (calf_w[f] + foot_w[f]).min() > 0.5
 shell('Wrap', wrap_face, lambda idx: np.full(len(idx), 0.008), material('Wrap', srgb(0xd8c7a3)))
-ball_y = {s: J[f'joint-{s}-toe-3-1'][1] if f'joint-{s}-toe-3-1' in J else -0.1 for s in 'lr'}
-def sandal_face(f):
-    f = list(f)
-    if foot_w[f].min() < 0.5: return False
-    if z[f].max() < 0.022: return True           # sole
-    yb = ball_y['l' if BV[f[0], 0] > 0 else 'r']
-    y = BV[f, 1].mean()
-    return z[f].max() < ANK - 0.01 and (y > yb + 0.03)  # heel cup and strap area behind the toes
-shell('Sandal', sandal_face, lambda idx: np.full(len(idx), 0.005), material('Sandal', srgb(0x121212)))
+# Shoes are lofted around each foot rather than shrink-wrapped, so the toes
+# disappear into one rounded toe box with a flat sole.
+SHOE_OFF = 0.007
+shoe_m = material('Shoe', srgb(0x121212))
+for s_ in 'lr':
+    sg = 1 if s_ == 'l' else -1
+    fi = np.where((foot_w > 0.5) & (z < ANK + 0.03) & (np.sign(BV[:, 0]) == sg))[0]
+    FP = BV[fi]
+    y0, y1 = FP[:, 1].min(), FP[:, 1].max()      # toe tip (front is -y) .. heel
+    NS, NA = 22, 16
+    ys = np.linspace(y0 - 0.016, y1 + 0.006, NS)
+    prof = []
+    for y in ys:
+        m = np.abs(FP[:, 1] - y) < 0.012
+        if not m.any(): m = np.argsort(np.abs(FP[:, 1] - y))[:8]
+        Q = FP[m]
+        prof.append((Q[:, 0].min(), Q[:, 0].max(), Q[:, 2].max()))
+    prof = np.array(prof)
+    for _ in range(3):   # smooth the profile along the foot
+        prof[1:-1] = (prof[:-2] + 2 * prof[1:-1] + prof[2:]) / 4
+    verts, src = [], []
+    for k, (y, (xa, xb, zt)) in enumerate(zip(ys, prof)):
+        u = k / (NS - 1)
+        # Round both ends: the toe and heel sections shrink to a cap.
+        end = min(u / 0.1, (1 - u) / 0.06, 1.0)
+        shrink = np.sqrt(max(0.0, 1 - (1 - end) ** 2))
+        cx, hw = (xa + xb) / 2, (xb - xa) / 2 + SHOE_OFF
+        ht = zt + SHOE_OFF
+        for j in range(NA):
+            t = 2 * np.pi * j / NA
+            c, sn = np.cos(t), np.sin(t)
+            ex = np.sign(c) * abs(c) ** 0.6 * hw * max(shrink, 0.5)
+            if sn >= 0:   # upper: superellipse dome
+                ez = abs(sn) ** 0.7 * ht * max(shrink, 0.55) + 0.0
+            else:         # sole: flat, with a slight bevel
+                ez = -abs(sn) ** 3 * 0.003
+            p = np.array([cx + ex, y, max(0.0, ez + 0.003)])
+            verts.append(p)
+            src.append(fi[np.argmin(((FP - p) ** 2).sum(1))])
+    faces = []
+    for k in range(NS - 1):
+        for j in range(NA):
+            a0, a1 = k * NA + j, k * NA + (j + 1) % NA
+            faces.append((a0, a1, a1 + NA, a0 + NA))
+    for k, sgn_ in ((0, 1), (NS - 1, -1)):   # end caps
+        ci = len(verts); verts.append(np.mean(verts[k * NA:(k + 1) * NA], axis=0))
+        src.append(src[k * NA])
+        for j in range(NA):
+            f = (ci, k * NA + j, k * NA + (j + 1) % NA)
+            faces.append(f if sgn_ > 0 else f[::-1])
+    ob = make_mesh(f'Shoe_{s_}', [tuple(v) for v in verts], faces)
+    # Outward normals: flip if the first side face points into the foot.
+    me = ob.data
+    pc = np.array(me.polygons[NA // 4].center); n = np.array(me.polygons[NA // 4].normal)
+    if np.dot(n, pc - np.array([prof[0][0] / 2 + prof[0][1] / 2, ys[0], 0.03])) < 0: me.flip_normals()
+    for poly in me.polygons: poly.use_smooth = True
+    ob.data.materials.append(shoe_m)
+    bind(ob, src_index=src)
 
 # ---- Eyes: flat anime eyes painted on a smoothed eye area ----
 # The realistic sockets are filled in with a smooth surface, then the eye is
