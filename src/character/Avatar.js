@@ -101,19 +101,32 @@ export class Avatar {
     const w = b.width * muscle * (female ? 0.86 : 1);
     const d = b.chestDepth * muscle;
     const L = b.limb * muscle * (female ? 0.88 : 1);
-    const legRole = o === 'gi' ? 'armor' : 'suit';
-    const topRole = o === 'rokan' ? 'suit' : 'armor';
+    const primal = o === 'primal';
+    const legRole = o === 'gi' || primal ? 'armor' : 'suit';
+    const topRole = primal ? 'skin' : o === 'rokan' ? 'suit' : 'armor';
 
-    // Heavy anime boots: wide rounded foot, tall shaft, contrasting cuff.
     for (const s of [-1, 1]) {
       const x = 0.14 * s;
-      add('boots', new THREE.SphereGeometry(0.5, 12, 8), [x, 0.07, 0.05], [0, 0.08 * s, 0], [0.14 * L, 0.14, 0.3]);
-      add('trim', new THREE.BoxGeometry(0.15 * L, 0.03, 0.3), [x, 0.015, 0.05], [0, 0.08 * s, 0]);
-      add('boots', new THREE.CylinderGeometry(0.1 * L, 0.088 * L, 0.36, 10), [x, 0.26, 0]);
-      add('belt', new THREE.CylinderGeometry(0.11 * L, 0.106 * L, 0.06, 10), [x, 0.44, 0]);
+      if (primal) {
+        // Sandals: bare foot on a dark sole with a strap, bandaged ankles,
+        // and loose pant legs ending in a ragged hem.
+        add('skin', new THREE.SphereGeometry(0.5, 12, 8), [x, 0.05, 0.06], [0, 0.08 * s, 0], [0.11 * L, 0.09, 0.26]);
+        add('boots', new THREE.BoxGeometry(0.13 * L, 0.03, 0.28), [x, 0.015, 0.06], [0, 0.08 * s, 0]);
+        add('boots', new THREE.CylinderGeometry(0.075 * L, 0.08 * L, 0.06, 10, 1, true), [x, 0.07, 0.03], [0.25, 0, 0], [1, 1, 1.25]);
+        add('suit', new THREE.CylinderGeometry(0.068 * L, 0.072 * L, 0.16, 10), [x, 0.15, 0]);
+        add('armor', raggedTube(0.105 * L, 0.125 * L, 0.42, 12, 0.035), [x * 1.04, 0.42, 0]);
+      } else {
+        // Heavy anime boots: wide rounded foot, tall shaft, contrasting cuff.
+        add('boots', new THREE.SphereGeometry(0.5, 12, 8), [x, 0.07, 0.05], [0, 0.08 * s, 0], [0.14 * L, 0.14, 0.3]);
+        add('trim', new THREE.BoxGeometry(0.15 * L, 0.03, 0.3), [x, 0.015, 0.05], [0, 0.08 * s, 0]);
+        add('boots', new THREE.CylinderGeometry(0.1 * L, 0.088 * L, 0.36, 10), [x, 0.26, 0]);
+        add('belt', new THREE.CylinderGeometry(0.11 * L, 0.106 * L, 0.06, 10), [x, 0.44, 0]);
+      }
       // Thigh and knee, angled slightly outward for a wide, heavy stance.
-      add(legRole, new THREE.CapsuleGeometry(0.1 * L, 0.32, 4, 10), [0.13 * s, 0.72, 0], [0, 0, -0.07 * s]);
-      add(legRole, new THREE.SphereGeometry(0.085 * L, 8, 6), [0.135 * s, 0.5, 0.01]);
+      // Gi pants are baggy, so the thighs are wider.
+      const baggy = primal ? 1.25 : 1;
+      add(legRole, new THREE.CapsuleGeometry(0.1 * L * baggy, 0.32, 4, 10), [0.13 * s, 0.72, 0], [0, 0, -0.07 * s]);
+      add(legRole, new THREE.SphereGeometry(0.085 * L * baggy, 8, 6), [0.135 * s, 0.5, 0.01]);
     }
 
     // Pelvis, waist, chest: a strong V-taper.
@@ -122,20 +135,41 @@ export class Avatar {
     add(topRole, new THREE.CapsuleGeometry(0.18, 0.16, 4, 14), [0, 1.3, 0], [0, 0, 0], [1.45 * w, 1, 0.8 * d]);
     // Pecs (or bust) give the chest its shape under any outfit.
     const chestRole = o === 'rokan' ? 'armor' : topRole;
+    if (primal && !female) {
+      // Bare torso: six-pack and obliques
+      for (let r = 0; r < 3; r++) {
+        for (const s of [-1, 1]) add('skinDetail', new THREE.SphereGeometry(0.04, 8, 6), [0.042 * s * w, 1.2 - r * 0.07, 0.112 * d], [0, 0, 0], [1.05, 0.75, 0.45]);
+      }
+      for (const s of [-1, 1]) add('skinDetail', new THREE.CapsuleGeometry(0.035, 0.12, 3, 6), [0.13 * s * w, 1.12, 0.06 * d], [0, 0, 0.12 * s], [1, 1, 0.6]);
+    }
     if (female) {
       add(chestRole, new THREE.SphereGeometry(0.085, 10, 8), [0, 1.33, 0.1 * d], [0, 0, 0], [2.0, 0.9, 0.9]);
     } else {
-      for (const s of [-1, 1]) add(chestRole, new THREE.SphereGeometry(0.11, 10, 8), [0.1 * w * s, 1.36, 0.1 * d], [0, 0, 0], [1.15 * w, 0.8, 0.55 * d]);
+      // Bare chests get flatter, squarer pecs; muscle details skip the outline.
+      const bare = chestRole === 'skin';
+      for (const s of [-1, 1]) {
+        add(bare ? 'skinDetail' : chestRole, new THREE.SphereGeometry(0.11, 10, 8), [0.095 * w * s, bare ? 1.37 : 1.36, bare ? 0.095 * d : 0.1 * d], [0, 0, bare ? -0.12 * s : 0], bare ? [1.4 * w, 0.62, 0.42 * d] : [1.15 * w, 0.8, 0.55 * d]);
+      }
     }
     // Traps and thick neck.
     for (const s of [-1, 1]) add('skin', new THREE.SphereGeometry(female ? 0.07 : 0.1, 10, 6), [0.12 * w * s, 1.5, -0.02], [0, 0, 0.35 * s], [1.3, 0.55, 0.9]);
     add('skin', new THREE.CylinderGeometry(female ? 0.06 : 0.075, female ? 0.07 : 0.09, 0.16, 10), [0, 1.53, 0]);
 
-    // Belt with buckle.
-    add('belt', new THREE.TorusGeometry(0.165, 0.032, 6, 18), [0, 1.04, 0], [Math.PI / 2, 0, 0], [1.2 * w, 0.85 * d, 1]);
-    add(o === 'gi' ? 'belt' : 'trim', new THREE.BoxGeometry(0.09, 0.07, 0.03), [0, 1.04, 0.15 * d]);
+    // Belt with buckle (or a thick tied sash for the primal gi).
+    if (primal) {
+      add('armor', raggedTube(0.2, 0.23, 0.17, 18, 0.03), [0, 0.92, 0], [0, 0, 0], [1.2 * w, 1, 0.9 * d]);
+      add('belt', new THREE.TorusGeometry(0.17, 0.045, 6, 18), [0, 1.03, 0], [Math.PI / 2, 0, 0], [1.2 * w, 0.88 * d, 1]);
+      add('belt', new THREE.SphereGeometry(0.045, 8, 6), [0, 1.03, 0.16 * d], [0, 0, 0], [1.2, 1, 0.8]);
+      add('belt', new THREE.BoxGeometry(0.06, 0.34, 0.02), [0.03, 0.84, 0.17 * d], [-0.08, 0, 0.1]);
+      add('belt', new THREE.BoxGeometry(0.055, 0.28, 0.02), [-0.035, 0.87, 0.165 * d], [-0.08, 0, -0.14]);
+    } else {
+      add('belt', new THREE.TorusGeometry(0.165, 0.032, 6, 18), [0, 1.04, 0], [Math.PI / 2, 0, 0], [1.2 * w, 0.85 * d, 1]);
+      add(o === 'gi' ? 'belt' : 'trim', new THREE.BoxGeometry(0.09, 0.07, 0.03), [0, 1.04, 0.15 * d]);
+    }
 
-    if (o === 'rokan') {
+    if (primal) {
+      for (const s of [-1, 1]) add('skin', new THREE.SphereGeometry(0.1, 10, 6), [0.29 * w * s, 1.43, 0], [0, 0, 0], [1.15 * L, 0.95, 1]);
+    } else if (o === 'rokan') {
       // Titan battle armor: chest plate over the undersuit, shoulder guards,
       // dark trim and waist flaps.
       add('armor', new THREE.CapsuleGeometry(0.19, 0.12, 4, 14), [0, 1.31, 0.005], [0, 0, 0], [1.5 * w, 0.95, 0.86 * d]);
@@ -177,10 +211,10 @@ export class Avatar {
     for (const [role, geos] of Object.entries(parts)) {
       const g = mergeGeometries(geos, false);
       geos.forEach((x) => x.dispose());
-      const mesh = new THREE.Mesh(g, this.mats[role]);
+      const mesh = new THREE.Mesh(g, this.mats[role.replace('Detail', '')]);
       mesh.castShadow = true;
       this.staticGroup.add(mesh);
-      if (role !== 'trim') {
+      if (role !== 'trim' && !role.endsWith('Detail')) {
         const out = new THREE.Mesh(g, outlineExtrudeMaterial(0.011));
         out.userData.isOutline = true;
         out.raycast = () => {};
@@ -362,9 +396,14 @@ export class Avatar {
     this.head.scale.setScalar(female ? 1.04 : 1.1);
     // Arms: Titan armor and tank top are sleeveless (bare, powerful arms).
     const sleeve = c.outfit === 'gi' || c.outfit === 'jacket';
+    const gloved = c.outfit === 'primal'; // fingerless gloves with a colored cuff
     for (const side of ['left', 'right']) {
-      this.arms[side].upper.material = sleeve ? this.mats.armor : this.mats.skin;
-      this.arms[side].lower.material = c.outfit === 'jacket' ? this.mats.armor : this.mats.skin;
+      const a = this.arms[side];
+      a.upper.material = sleeve ? this.mats.armor : this.mats.skin;
+      a.lower.material = c.outfit === 'jacket' ? this.mats.armor : this.mats.skin;
+      a.fist.material = gloved ? this.mats.gloves : this.mats.skin;
+      a.wrap.material = gloved ? this.mats.armor : this.mats.gloves;
+      a.knuckle.material = gloved ? this.mats.skin : this.mats.gloves;
     }
     this.rebuildFace();
     this.bodyKey = '';
@@ -397,4 +436,19 @@ export class Avatar {
       if (o.geometry && !o.userData.isOutline) o.geometry.dispose();
     });
   }
+}
+
+// Open tube with a zig-zag bottom edge (ragged cloth hems).
+function raggedTube(rTop, rBottom, h, seg, tear) {
+  const g = new THREE.CylinderGeometry(rTop, rBottom, h, seg, 2, true);
+  const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    if (p.getY(i) < -h / 2 + 1e-4) {
+      const a = Math.atan2(p.getZ(i), p.getX(i));
+      const k = Math.round(((a + Math.PI) / (Math.PI * 2)) * seg);
+      p.setY(i, p.getY(i) + (k % 2 ? tear : 0) + (k % 3 === 0 ? tear * 0.5 : 0));
+    }
+  }
+  g.computeVertexNormals();
+  return g;
 }

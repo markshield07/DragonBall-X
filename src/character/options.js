@@ -45,6 +45,7 @@ export const EYE_COLORS = [
   { name: 'Green', color: 0x2e9a54 },
   { name: 'Violet', color: 0x7a3fc4 },
   { name: 'Red', color: 0xc42a2a },
+  { name: 'Steel', color: 0x5f7390 },
 ];
 
 // Body presets scale the one shared rig. Rokan's default is Muscular.
@@ -83,8 +84,10 @@ export const EXPRESSIONS = [
 ];
 
 // Outfit style decides which pieces exist; the five color slots below
-// recolor them. 'rokan' is the default Titan battle armor.
+// recolor them. 'primal' is Rokan's default: shirtless, baggy gi pants with
+// a ragged waist flap, a tied sash, fingerless gloves, ankle wraps, sandals.
 export const OUTFITS = [
+  { id: 'primal', name: 'Primal Gi' },
   { id: 'rokan', name: 'Titan Armor' },
   { id: 'gi', name: 'Training Gi' },
   { id: 'jacket', name: 'Battle Jacket' },
@@ -103,15 +106,16 @@ export const OUTFIT_PALETTE = [
   { name: 'Navy', color: 0x1b2552 },
   { name: 'Purple', color: 0x5a2d91 },
   { name: 'Forest', color: 0x2c7a3c },
+  { name: 'Bandage', color: 0xd8c3a0 },
 ];
 
 // Recolorable outfit sections, in creator order.
 export const OUTFIT_SECTIONS = [
-  { key: 'armorColor', name: 'Armor / chest' },
-  { key: 'suitColor', name: 'Undersuit' },
-  { key: 'gloveColor', name: 'Wraps / gloves' },
-  { key: 'bootColor', name: 'Boots' },
-  { key: 'beltColor', name: 'Belt / accents' },
+  { key: 'armorColor', name: 'Main / pants' },
+  { key: 'suitColor', name: 'Under / wraps' },
+  { key: 'gloveColor', name: 'Gloves' },
+  { key: 'bootColor', name: 'Footwear' },
+  { key: 'beltColor', name: 'Belt / sash' },
 ];
 
 export const paletteColor = (i) => OUTFIT_PALETTE[((i % OUTFIT_PALETTE.length) + OUTFIT_PALETTE.length) % OUTFIT_PALETTE.length].color;
@@ -125,26 +129,26 @@ export function randomName() {
   return (a + b).slice(0, 12);
 }
 
-// The Rokan default look.
+// The Rokan default look (matches the reference concept art).
 export function defaultCharacter() {
   return {
     version: 2,
     name: randomName(),
     body: 'male',
     build: 'muscular',
-    skin: 8, // Deep
+    skin: 3, // Warm tan
     hairStyle: 'rokan',
     hairColor: 0, // Black
-    eyeColor: 0,
+    eyeColor: 7, // Steel blue-grey
     brows: 'fierce',
     scar: 'none',
     expression: 'fierce',
-    outfit: 'rokan',
-    armorColor: 0, // Crimson
-    suitColor: 1, // Black
-    gloveColor: 0, // Crimson wraps
-    bootColor: 1, // Black
-    beltColor: 4, // Gold
+    outfit: 'primal',
+    armorColor: 0, // Crimson pants, waist flap and wrist cuffs
+    suitColor: 10, // Bandage ankle wraps
+    gloveColor: 1, // Black fingerless gloves
+    bootColor: 1, // Black sandals
+    beltColor: 1, // Black sash
   };
 }
 

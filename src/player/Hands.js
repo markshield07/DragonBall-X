@@ -15,6 +15,8 @@ export class Hands {
     this.skinMat = toonUnique(0xf6c9a0);
     this.bandMat = toonUnique(0x1f3fa8);
     this.sleeveMat = toonUnique(0xff7a1a);
+    this.gloveMat = toonUnique(0x17171d);
+    this.cuffMat = toonUnique(0xb81d2a);
     this.hands = {};
     for (const side of ['left', 'right']) {
       const g = new THREE.Group();
@@ -71,7 +73,7 @@ export class Hands {
 
       rig.add(g);
       this.hands[side] = {
-        side, group: g, glow, shell, sheath, arm, sleeve, fist,
+        side, group: g, glow, shell, sheath, arm, sleeve, fist, handWrap, band,
         prevLocal: new THREE.Vector3(), localPos: new THREE.Vector3(), vel: new THREE.Vector3(), velLocal: new THREE.Vector3(),
         worldPos: new THREE.Vector3(), speed: 0, first: true, glowLevel: 0, swingArmed: true,
         color: new THREE.Color(0x9fdcff),
@@ -82,6 +84,11 @@ export class Hands {
   applyCharacter(character) {
     this.skinMat.color.setHex(SKIN_TONES[character.skin % SKIN_TONES.length].color);
     this.bandMat.color.setHex(paletteColor(character.gloveColor));
+    this.gloveMat.color.setHex(paletteColor(character.gloveColor));
+    this.cuffMat.color.setHex(paletteColor(character.armorColor));
+    // Primal gi: fingerless gloves (glove over the back of the fist, bare
+    // knuckles and thumb) with a colored wrist cuff.
+    const gloved = character.outfit === 'primal';
     this.sleeveMat.color.setHex(paletteColor(character.armorColor));
     // Titan armor and the tank top leave the forearms bare; the build
     // preset thickens or slims the first-person forearms and fists.
@@ -89,6 +96,9 @@ export class Hands {
     const k = buildOf(character).limb * (character.body === 'female' ? 0.9 : 1);
     for (const h of Object.values(this.hands)) {
       h.sleeve.visible = sleeve;
+      h.fist.material = gloved ? this.gloveMat : this.skinMat;
+      h.handWrap.visible = !gloved;
+      h.band.material = gloved ? this.cuffMat : this.bandMat;
       h.arm.scale.set(k, k, 1);
       h.fist.scale.setScalar(0.92 + 0.08 * k);
     }
