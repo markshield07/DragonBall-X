@@ -7,7 +7,7 @@ import { BOSSES } from '../boss/Raxor.js';
 import { GRAPHICS_PRESETS } from '../settings/Settings.js';
 import {
   SKIN_TONES, HAIR_STYLES, HAIR_COLORS, EYE_COLORS, BODY_TYPES, BUILDS, BROWS, SCARS, EXPRESSIONS,
-  OUTFITS, OUTFIT_PALETTE, OUTFIT_SECTIONS, randomName, defaultCharacter,
+  OUTFITS, OUTFIT_PALETTE, OUTFIT_SECTIONS, CHARACTER_TEMPLATES, applyCharacterTemplate, randomName, defaultCharacter,
 } from '../character/options.js';
 import { formatNumber } from '../core/math.js';
 
@@ -78,7 +78,7 @@ export class CharacterCreator {
     const c = g.character;
     ui.background();
     ui.text('CREATE YOUR SAIYAN', ui.W / 2, 72, { size: 56, align: 'center', color: COLORS.gold });
-    ui.text('Base model: Rokan, the Primal Titan', ui.W / 2, 112, { size: 26, align: 'center', color: COLORS.muted, weight: 'normal' });
+    ui.text('Choose an anime warrior template, then customize your look', ui.W / 2, 112, { size: 26, align: 'center', color: COLORS.muted, weight: 'normal' });
     if (this.keyboard) return this.drawKeyboard(ui);
     const rowH = 96;
     let y = 128;
@@ -117,6 +117,13 @@ export class CharacterCreator {
     }));
     y += 96;
     if (this.tab === 'body') {
+      const templates = CHARACTER_TEMPLATES;
+      const ti = Math.max(0, templates.findIndex(t => t.id === c.templateId));
+      ui.text('Template', labelX, y + 58, { size: 34, color: COLORS.muted });
+      ui.button('template-prev', '<', valX, y + 12, 80, 72, { size: 44, onClick: () => { applyCharacterTemplate(c, templates[cycle(templates, ti, -1)].id); this.changed(); } });
+      ui.text(templates[ti].name, valX + valW / 2, y + 60, { size: 32, align: 'center', maxWidth: valW - 190 });
+      ui.button('template-next', '>', valX + valW - 80, y + 12, 80, 72, { size: 44, onClick: () => { applyCharacterTemplate(c, templates[cycle(templates, ti, 1)].id); this.changed(); } });
+      y += rowH;
       arrowRow('build', 'Build', BUILDS, 'build');
       arrowRow('frame', 'Frame', BODY_TYPES, 'body');
       swatchRow('skin', 'Skin tone', SKIN_TONES, 'skin');
