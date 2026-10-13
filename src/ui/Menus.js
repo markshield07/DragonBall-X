@@ -46,7 +46,11 @@ export class MainMenu {
       ui.button('continue', 'Continue', x, y, bw, 120, { size: 48, color: '#b4560f', sub: s, onClick: () => g.continueGame() });
       y += 140;
     }
-    ui.button('new', 'New Warrior', x, y, bw, 100, { size: 42, onClick: () => { if (has) this.confirmNew = true; else g.newGame(); } });
+    if (has) {
+      const hw = (bw - 20) / 2;
+      ui.button('look', 'Change Look', x, y, hw, 100, { size: 36, onClick: () => g.editLook() });
+      ui.button('new', 'New Warrior', x + hw + 20, y, hw, 100, { size: 36, onClick: () => { this.confirmNew = true; } });
+    } else ui.button('new', 'New Warrior', x, y, bw, 100, { size: 42, onClick: () => g.newGame() });
     y += 120;
     ui.button('help', 'How to Play', x, y, bw, 90, { size: 36, onClick: () => g.openGameMenu('help', true) });
     y += 110;
@@ -81,8 +85,10 @@ export class CharacterCreator {
     const g = this.game;
     const c = g.character;
     ui.background();
-    ui.text('CREATE YOUR SAIYAN', ui.W / 2, 72, { size: 56, align: 'center', color: COLORS.gold });
-    ui.text(g.isXR ? 'Pick a warrior, then make them your own' : 'Pick a warrior, then make them your own. Type to change the name.', ui.W / 2, 112, { size: 26, align: 'center', color: COLORS.muted, weight: 'normal' });
+    const editing = !!g.editing;
+    ui.text(editing ? 'CHANGE YOUR LOOK' : 'CREATE YOUR SAIYAN', ui.W / 2, 72, { size: 56, align: 'center', color: COLORS.gold });
+    const hint = editing ? 'Your Power Level and unlocks stay the same' : 'Pick a warrior, then make them your own';
+    ui.text(g.isXR ? hint : `${hint}. Type to change the name.`, ui.W / 2, 112, { size: 26, align: 'center', color: COLORS.muted, weight: 'normal' });
     if (this.keyboard) return this.drawKeyboard(ui);
     const rowH = 96;
     let y = 128;
@@ -146,10 +152,13 @@ export class CharacterCreator {
       arrowRow('outfit', 'Outfit', OUTFITS, 'outfit');
       for (const sec of OUTFIT_SECTIONS) swatchRow(sec.key, sec.name, OUTFIT_PALETTE, sec.key);
     }
-    ui.button('preview-ssj', `See forms: ${FORMS[g.previewForm].name}`, 40, ui.H - 118, 440, 90, {
+    ui.button('preview-ssj', `See forms: ${FORMS[g.previewForm].name}`, 40, ui.H - 118, editing ? 380 : 440, 90, {
       size: 30, onClick: () => { g.togglePreviewForm(); },
     });
-    ui.button('start', 'Begin Training!', ui.W - 520, ui.H - 118, 480, 90, { size: 42, color: '#b4560f', onClick: () => g.finishCreation() });
+    if (editing) {
+      ui.button('cancel', 'Cancel', 440, ui.H - 118, 210, 90, { size: 34, onClick: () => g.cancelLookEdit() });
+      ui.button('start', 'Save My Look', ui.W - 500, ui.H - 118, 460, 90, { size: 40, color: '#b4560f', onClick: () => g.finishCreation() });
+    } else ui.button('start', 'Begin Training!', ui.W - 520, ui.H - 118, 480, 90, { size: 42, color: '#b4560f', onClick: () => g.finishCreation() });
   }
 
   drawKeyboard(ui) {
@@ -227,6 +236,10 @@ export class GameMenu {
       size: 32, enabled: sf.unlocked, sub: sf.unlocked ? (g.isXR ? 'Right stick click' : 'F') : `Unlocks at Speed Lv ${SLOWMO_UNLOCK_LEVEL}`,
       onClick: () => { g.closeGameMenu(); sf.activate(); },
     });
+    // Restyle your warrior any time (not during a boss fight).
+    if (g.state === 'training') {
+      ui.button('act-look', 'Change My Look', a.x, y + 105, 680, 80, { size: 34, color: '#7a3ab4', sub: 'Hair, face, outfit, colors', onClick: () => g.editLook() });
+    }
     // Right column: goal + transformations
     const rx = a.x + 760;
     const goal = p.nextGoal(BOSSES);

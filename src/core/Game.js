@@ -348,6 +348,43 @@ export class Game {
     this.progress.refreshUnlocks();
   }
 
+  // Change your warrior's look after creating them (from the main menu or
+  // the in-game menu). Progress is kept; Cancel puts the old look back.
+  editLook() {
+    if (this.state === 'menu') {
+      const save = SaveSystem.load();
+      if (!save) return;
+      this.character = migrateCharacter(save.character);
+      this.progress = new Progression(save.progress);
+    } else if (this.state !== 'training') return;
+    this.editing = { before: JSON.parse(JSON.stringify(this.character)), activity: this.state === 'training' ? this.training.activity : 'punch', fromMain: this.state === 'menu' };
+    this.menuOpen = false;
+    this.transformation.forceBase();
+    this.training.setEnabled(false);
+    this.hud.setMode(this.isXR, false);
+    this.creator.tab = 'body';
+    this.openCreator();
+  }
+
+  cancelLookEdit() {
+    if (!this.editing) return;
+    this.character = this.editing.before;
+    this.finishLookEdit(false);
+  }
+
+  finishLookEdit(saved) {
+    const ed = this.editing;
+    this.editing = null;
+    this.removePreview();
+    this.applyCharacter();
+    this.startTraining(ed.activity || 'punch');
+    if (saved) this.save();
+    if (ed.fromMain) this.progress.refreshUnlocks();
+    this.banner.push(saved
+      ? { title: `Looking good, ${this.character.name}!`, subtitle: 'Your new look is saved', duration: 2.5, color: '#5cff8a' }
+      : { title: `Welcome back, ${this.character.name}!`, subtitle: 'Your look did not change', duration: 2 });
+  }
+
   openCreator() {
     this.state = 'creator';
     this.hideAllMenus();
@@ -410,6 +447,7 @@ export class Game {
   }
 
   finishCreation() {
+    if (this.editing) return this.finishLookEdit(true);
     this.removePreview();
     this.applyCharacter();
     this.state = 'training';
