@@ -4,6 +4,7 @@ import { toonUnique, addOutline, outlineExtrudeMaterial } from '../render/toon.j
 import { buildHairGeometry, HEAD_RADIUS } from './hair.js';
 import { SKIN_TONES, HAIR_COLORS, EYE_COLORS, paletteColor, buildOf } from './options.js';
 import { FORMS } from '../progression/forms.js';
+import { torsoGeometry, legGeometry, armGeometry } from './anatomy.js';
 
 const tmpA = new THREE.Vector3();
 const tmpB = new THREE.Vector3();
@@ -105,56 +106,47 @@ export class Avatar {
     const legRole = o === 'gi' || primal ? 'armor' : 'suit';
     const topRole = primal ? 'skin' : o === 'rokan' ? 'suit' : 'armor';
 
-    for (const s of [-1, 1]) {
-      const x = 0.14 * s;
-      if (primal) {
-        // Sandals: bare foot on a dark sole with a strap, bandaged ankles,
-        // and loose pant legs ending in a ragged hem.
-        add('skin', new THREE.SphereGeometry(0.5, 12, 8), [x, 0.05, 0.06], [0, 0.08 * s, 0], [0.11 * L, 0.09, 0.26]);
-        add('boots', new THREE.BoxGeometry(0.13 * L, 0.03, 0.28), [x, 0.015, 0.06], [0, 0.08 * s, 0]);
-        add('boots', new THREE.CylinderGeometry(0.075 * L, 0.08 * L, 0.06, 10, 1, true), [x, 0.07, 0.03], [0.25, 0, 0], [1, 1, 1.25]);
-        add('suit', new THREE.CylinderGeometry(0.068 * L, 0.072 * L, 0.16, 10), [x, 0.15, 0]);
-        add('armor', raggedTube(0.105 * L, 0.125 * L, 0.42, 12, 0.035), [x * 1.04, 0.42, 0]);
+    // Single flowing anatomical torso and legs. Surface relief reads as muscle,
+    // rather than detached spherical/capsule segments.
+    add(topRole, torsoGeometry(w,d,female), [0,0,0]);
+    for (const s of [-1,1]) {
+      add(legRole, legGeometry(s,L * (primal ? 1.06 : 1)), [0,0,0]);
+      // Gluteus maximus, positioned behind the hips on each side.
+      add(legRole, new THREE.SphereGeometry(.11,16,12), [.125*s,.935,-.085], [0,0,0],[1.13*L,.85,1.05]);
+      if(primal) {
+        add('skin',new THREE.SphereGeometry(.5,16,12),[.135*s,.055,.075],[0,0,0],[.12*L,.085,.25]);
+        add('boots',new THREE.BoxGeometry(.15*L,.025,.29),[.135*s,.015,.055]);
+        add('suit',new THREE.CylinderGeometry(.08*L,.09*L,.115,12),[.135*s,.185,0]);
       } else {
-        // Heavy anime boots: wide rounded foot, tall shaft, contrasting cuff.
-        add('boots', new THREE.SphereGeometry(0.5, 12, 8), [x, 0.07, 0.05], [0, 0.08 * s, 0], [0.14 * L, 0.14, 0.3]);
-        add('trim', new THREE.BoxGeometry(0.15 * L, 0.03, 0.3), [x, 0.015, 0.05], [0, 0.08 * s, 0]);
-        add('boots', new THREE.CylinderGeometry(0.1 * L, 0.088 * L, 0.36, 10), [x, 0.26, 0]);
-        add('belt', new THREE.CylinderGeometry(0.11 * L, 0.106 * L, 0.06, 10), [x, 0.44, 0]);
+        add('boots',new THREE.SphereGeometry(.5,16,12),[.135*s,.06,.075],[0,0,0],[.145*L,.125,.3]);
+        add('boots',new THREE.CylinderGeometry(.107*L,.092*L,.27,14),[.135*s,.26,0]);
       }
-      // Thigh and knee, angled slightly outward for a wide, heavy stance.
-      // Gi pants are baggy, so the thighs are wider.
-      const baggy = primal ? 1.32 : 1.08;
-      add(legRole, new THREE.CapsuleGeometry(0.115 * L * baggy, 0.32, 4, 10), [0.13 * s, 0.72, 0], [0, 0, -0.07 * s]);
-      add(legRole, new THREE.SphereGeometry(0.105 * L * baggy, 10, 8), [0.135 * s, 0.5, 0.01]);
+      // Trapezius slope connects wide delts to thick neck.
+      add('skin',new THREE.SphereGeometry(.10,16,12),[s*.14*w,1.5,-.015],[0,0,s*.32],[1.48,.58,1.1]);
+      // Capped deltoid, anatomical shoulder insertion.
+      add(o==='jacket'||o==='gi'?'armor':'skin',new THREE.SphereGeometry(.105,18,14),
+        [s*.285*w,1.42,-.005],[0,0,s*.15],[1.22*L,1.12,1.08]);
+      // Lats wrap around both sides of rib cage for the V silhouette.
+      add(topRole,new THREE.SphereGeometry(.10,14,10),[s*.182*w,1.285,-.055],
+        [0,0,-s*.18],[.94*w,1.53,1.12*d]);
     }
-
-    // Pelvis, waist, chest: a strong V-taper.
-    add(legRole, new THREE.CapsuleGeometry(0.16, 0.06, 4, 12), [0, 0.98, 0], [0, 0, 0], [1.2 * w * (female ? 1.15 : 1), 1, 0.85 * d]);
-    add(o === 'tank' ? 'armor' : topRole, new THREE.CapsuleGeometry(0.15, 0.12, 4, 12), [0, 1.12, 0], [0, 0, 0], [1.05 * w, 1, 0.8 * d]);
-    add(topRole, new THREE.CapsuleGeometry(0.18, 0.16, 4, 14), [0, 1.3, 0], [0, 0, 0], [1.45 * w, 1, 0.8 * d]);
-    // Pecs (or bust) give the chest its shape under any outfit.
-    const chestRole = o === 'rokan' ? 'armor' : topRole;
-    if (primal && !female) {
-      // Bare torso: six-pack and obliques
-      for (let r = 0; r < 3; r++) {
-        for (const s of [-1, 1]) add('skinDetail', new THREE.SphereGeometry(0.04, 8, 6), [0.042 * s * w, 1.2 - r * 0.07, 0.112 * d], [0, 0, 0], [1.05, 0.75, 0.45]);
-      }
-      for (const s of [-1, 1]) add('skinDetail', new THREE.CapsuleGeometry(0.035, 0.12, 3, 6), [0.13 * s * w, 1.12, 0.06 * d], [0, 0, 0.12 * s], [1, 1, 0.6]);
-    }
-    if (female) {
-      add(chestRole, new THREE.SphereGeometry(0.085, 10, 8), [0, 1.33, 0.1 * d], [0, 0, 0], [2.0, 0.9, 0.9]);
-    } else {
-      // Bare chests get flatter, squarer pecs; muscle details skip the outline.
-      const bare = chestRole === 'skin';
-      for (const s of [-1, 1]) {
-        add(bare ? 'skinDetail' : chestRole, new THREE.SphereGeometry(0.11, 10, 8), [0.095 * w * s, bare ? 1.37 : 1.36, bare ? 0.095 * d : 0.1 * d], [0, 0, bare ? -0.12 * s : 0], bare ? [1.36 * w, 0.51, 0.35 * d] : [1.15 * w, 0.8, 0.55 * d]);
+    // Separated pectorals with tapered surfaces and flattened forward projection.
+    for (const s of [-1,1]) {
+      const role=primal?'skin':o==='rokan'?'armor':topRole;
+      add(role,new THREE.SphereGeometry(.105,20,14),[s*.111*w,1.365,.105*d],
+        [0,0,-s*.09],[1.25*w,.77,.66*d]);
+      if(primal) {
+        // Serratus/obliques, subtle instead of floating round abdominal buttons.
+        for(let i=0;i<3;i++)
+          add('skinDetail',new THREE.SphereGeometry(.027,10,8),
+            [s*(.133-i*.009)*w,1.225-i*.062,.106*d],[0,0,s*.20],[.84,.74,.28]);
+        for(let i=0;i<3;i++)
+          add('skinDetail',new THREE.SphereGeometry(.041,12,10),
+            [s*.049*w,1.235-i*.065,.111*d],[0,0,s*.035],[1,.67,.28]);
       }
     }
-    // Traps and thick neck.
-    for (const s of [-1, 1]) add('skin', new THREE.SphereGeometry(female ? 0.07 : 0.1, 10, 6), [0.12 * w * s, 1.5, -0.02], [0, 0, 0.35 * s], [1.3, 0.55, 0.9]);
-    add('skin', new THREE.CylinderGeometry(female ? 0.06 : 0.075, female ? 0.07 : 0.09, 0.16, 10), [0, 1.53, 0]);
-
+    // The bodybuilder's thick neck rises directly between pronounced traps.
+    add('skin',new THREE.CylinderGeometry(female?.063:.075,female?.078:.089,.165,16),[0,1.53,0]);
     // Belt with buckle (or a thick tied sash for the primal gi).
     if (primal) {
       add('armor', raggedTube(0.2, 0.23, 0.17, 18, 0.03), [0, 0.92, 0], [0, 0, 0], [1.2 * w, 1, 0.9 * d]);
@@ -312,8 +304,8 @@ export class Avatar {
     this.arms = {};
     for (const side of ['left', 'right']) {
       const s = side === 'left' ? 1 : -1; // avatar's left is +X
-      const upper = new THREE.Mesh(new THREE.CapsuleGeometry(0.07, 0.2, 4, 10), m.skin);
-      const lower = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.18, 4, 10), m.skin);
+      const upper = new THREE.Mesh(armGeometry(true), m.skin);
+      const lower = new THREE.Mesh(armGeometry(false), m.skin);
       const wrap = new THREE.Mesh(new THREE.CylinderGeometry(0.068, 0.064, 0.12, 10), m.gloves);
       const fist = new THREE.Mesh(new THREE.SphereGeometry(0.068, 12, 8), m.skin);
       const knuckle = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.035, 10), m.gloves);
