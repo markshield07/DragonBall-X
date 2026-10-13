@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { softCircleTexture } from '../render/toon.js';
 import { rand } from '../core/math.js';
+import { Explosions } from './Explosions.js';
 
 const MAX_PARTICLES = 700;
 
@@ -158,6 +159,29 @@ function crackTexture() {
   return t;
 }
 
+// Anime impact star ("hit spark"): a jagged white starburst with a coloured rim.
+function impactTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const star = (n, r0, r1, fill) => {
+    g.beginPath();
+    for (let i = 0; i < n * 2; i++) {
+      const a = (i / (n * 2)) * Math.PI * 2 + rand(-0.08, 0.08);
+      const r = i % 2 ? r0 : r1 * rand(0.7, 1);
+      g.lineTo(64 + Math.cos(a) * r, 64 + Math.sin(a) * r);
+    }
+    g.closePath();
+    g.fillStyle = fill;
+    g.fill();
+  };
+  star(9, 20, 62, 'rgba(255,255,255,0.55)');
+  star(7, 14, 46, 'rgba(255,255,255,1)');
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
 const _v = new THREE.Vector3();
 
 // Central effects manager: particles, expanding shockwave rings, ground
@@ -176,6 +200,36 @@ export class Effects {
     this.ringGeo.rotateX(-Math.PI / 2);
     this.sphereGeo = new THREE.SphereGeometry(1, 16, 12);
     this.colTmp = new THREE.Color();
+    this.impactTex = impactTexture();
+    this.impacts = [];
+    this.boom = new Explosions(scene, this);
+  }
+
+  get eye() { return this.boom.eye; }
+
+  // Energy-scaled ki explosion (see Explosions.js).
+  explosion(pos, color, energy = 1) { this.boom.explode(pos, color, energy); }
+  dust(pos, size, count, color) { this.boom.dust(pos, size, count, color); }
+
+  // Hit spark that pops for a few frames where a blow lands.
+  impact(pos, color = 0xffffff, size = 0.5) {
+    let s = this.impacts.find((x) => !x.s.visible);
+    if (!s) {
+      if (this.impacts.length >= 8) s = this.impacts[0];
+      else {
+        const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.impactTex, transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending }));
+        sp.renderOrder = 19;
+        this.scene.add(sp);
+        s = { s: sp, t: 0, size: 1 };
+        this.impacts.push(s);
+      }
+    }
+    s.s.visible = true;
+    s.s.position.copy(pos);
+    s.s.material.color.set(color);
+    s.s.material.rotation = Math.random() * Math.PI * 2;
+    s.t = 0;
+    s.size = size;
   }
 
   setBudget(b) { this.particles.budget = b; }
@@ -274,6 +328,15 @@ export class Effects {
 
   update(dt) {
     this.particles.update(dt);
+    this.boom.update(dt);
+    for (const s of this.impacts) {
+      if (!s.s.visible) continue;
+      s.t += dt;
+      const k = s.t / 0.14;
+      if (k >= 1) { s.s.visible = false; continue; }
+      s.s.scale.setScalar(s.size * (0.6 + 0.6 * k));
+      s.s.material.opacity = (1 - k * k) * this.intensity;
+    }
     for (let i = this.rings.length - 1; i >= 0; i--) {
       const r = this.rings[i];
       r.t += dt;

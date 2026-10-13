@@ -57,6 +57,7 @@ export class Player {
     this.target = {
       id: 'player',
       team: 'player',
+      center: () => this.headWorld,
       testProjectile: (p) => this.testProjectile(p),
     };
     game.combat.addTarget(this.target);

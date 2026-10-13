@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { bus } from '../core/events.js';
 import { clamp } from '../core/math.js';
 import { glowMaterial, softCircleTexture } from '../render/toon.js';
+import { terrainHeight } from '../world/Arena.js';
+import { Explosions } from '../fx/Explosions.js';
 
 const _a = new THREE.Vector3();
 const _b = new THREE.Vector3();
@@ -169,10 +171,12 @@ export class Combat {
       p.mesh.scale.setScalar(p.radius * pulse);
       // Trail
       if (Math.random() < 0.7) this.fx.stream(p.mesh.position, p.color, { vy: 0, spread: p.radius * 0.5, size: p.radius * 0.9, life: 0.25 });
-      let done = p.life <= 0 || p.mesh.position.y < 0;
+      const pp = p.mesh.position;
+      let done = p.life <= 0 || pp.y < terrainHeight(pp.x, pp.z);
       if (!done) done = this.collideProjectile(p);
+      if (!done) this.checkPassed(p);
       if (done) {
-        if (p.life > 0) this.explode(p);
+        this.explode(p);
         this.removeProjectile(i);
       }
     }
@@ -196,14 +200,34 @@ export class Combat {
     return p;
   }
 
+  // A blast that flies past whoever it was aimed at (dodged, or just missed)
+  // doesn't vanish into the sky: it detonates a few metres behind them.
+  checkPassed(p) {
+    if (p.passed) return;
+    for (const t of this.targets) {
+      if (t.team === p.team || (t.active && !t.active())) continue;
+      const c = t.center ? t.center() : t.sphere?.().center;
+      if (!c) continue;
+      const to = _a.subVectors(c, p.mesh.position);
+      if (to.lengthSq() > 36) continue;
+      const along = to.dot(p.vel);
+      if (along > 0) { p.approached = true; continue; }
+      if (!p.approached) continue;
+      p.passed = true;
+      p.life = Math.min(p.life, 2.6 / Math.max(1, p.speed) + 0.06);
+      return;
+    }
+  }
+
   collideProjectile(p) {
     if (p.team === 'player') {
       for (const t of this.targets) {
-        if (t.team !== 'enemy' || (t.active && !t.active())) continue;
+        if (t.team !== 'enemy' || (t.active && !t.active()) || p.ignore === t) continue;
         const s = t.sphere();
         if (segmentSphere(p.prev, p.mesh.position, s.center, s.radius + p.radius)) {
-          const hit = { damage: p.damage, dir: p.vel.clone().normalize(), point: p.mesh.position.clone(), charged: p.charged, kind: 'blast', power: p.charged ? 1 : 0.4 };
-          t.onBlast?.(hit);
+          const hit = { damage: p.damage, dir: p.vel.clone().normalize(), point: p.mesh.position.clone(), charged: p.charged, kind: 'blast', sphere: p.kind === 'sphere', power: p.charged ? 1 : 0.4, energy: Explosions.energyOf(p) };
+          // A target can dodge at the last instant: the blast keeps flying.
+          if (t.onBlast?.(hit) === 'dodged') { p.ignore = t; continue; }
           bus.emit('blast:hit', { ...hit, target: t });
           return true;
         }
@@ -219,16 +243,11 @@ export class Combat {
   }
 
   explode(p) {
-    if (p.kind === 'sphere') {
-      this.fx.burst(p.mesh.position, p.color, 60, 6, 0.16, 0.9);
-      this.fx.ring(p.mesh.position.clone(), p.color, { maxRadius: 6 * p.radius + 2, duration: 0.7 });
-      this.fx.flash(p.mesh.position, 0xffffff, p.radius * 6, 0.25);
-      if (p.mesh.position.y < 1.5) this.fx.crack(p.mesh.position.clone(), 2 + p.radius * 2);
-    }
-    const s = p.charged ? 1 : 0.4;
-    this.fx.burst(p.mesh.position, p.color, p.charged ? 26 : 10, 3 * s + 1, 0.1 * s + 0.05, 0.5);
-    this.fx.flash(p.mesh.position, p.color, p.radius * 4, 0.18);
-    bus.emit('projectile:explode', { position: p.mesh.position.clone(), charged: p.charged, team: p.team, kind: p.kind });
+    const energy = Explosions.energyOf(p);
+    this.fx.explosion(p.mesh.position, p.color, energy);
+    this.fx.flash(p.mesh.position, p.color, p.radius * 4 + energy * 0.8, 0.18 + 0.06 * energy);
+    if (p.kind === 'sphere') this.fx.ring(p.mesh.position.clone(), p.color, { maxRadius: 6 * p.radius + 2, duration: 0.7 });
+    bus.emit('projectile:explode', { position: p.mesh.position.clone(), charged: p.charged, team: p.team, kind: p.kind, energy });
   }
 
   removeProjectile(i) {
