@@ -4,6 +4,7 @@ import { clamp, rand } from '../core/math.js';
 import { FORMS, nextForm } from '../progression/forms.js';
 import { Lightning } from '../fx/Effects.js';
 import { PowerUpFX } from '../fx/PowerUpFX.js';
+import { key } from '../ui/controls.js';
 
 const _c = new THREE.Vector3();
 const BURST_AT = 1.05; // seconds into the sequence when the burst happens
@@ -122,7 +123,7 @@ export class Transformation {
       const f = can.form || FORMS.ssj1;
       bus.emit('hud:message', { text: f.unlock ? `Locked: ${f.unlock.label}` : 'Not available yet', color: '#ff9a4d' });
     } else if (can.reason === 'charge') {
-      bus.emit('hud:message', { text: 'Power up first! Hold BOTH grips (Space)', color: '#ffd24d' });
+      bus.emit('hud:message', { text: `Power up first! ${key(this.game, 'powerUp')}`, color: '#ffd24d' });
     } else if (can.reason === 'ki') {
       bus.emit('hud:message', { text: 'Not enough ki to transform', color: '#ff9a4d' });
     } else if (can.reason === 'max') {

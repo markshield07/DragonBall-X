@@ -19,7 +19,7 @@ export const ACTIVITIES = [
   { id: 'punch', name: 'Punching Training', stat: 'strength', desc: 'Punch the dummy. Harder punches and combos give more Strength XP. Break it for a bonus!' },
   { id: 'ki', name: 'Ki Training', stat: 'ki', desc: 'Aim at the floating targets and fire ki blasts. Charged blasts and far targets give more Ki XP.' },
   { id: 'speed', name: 'Speed Training', stat: 'speed', desc: 'Punch or touch each orb as it appears. Faster reactions give more Speed XP.' },
-  { id: 'defense', name: 'Defensive Training', stat: 'stamina', desc: 'The bot fires energy orbs. Block (left grip / Q) or dodge them for Stamina XP.' },
+  { id: 'defense', name: 'Defensive Training', stat: 'stamina', desc: 'The bot fires energy orbs. Block or dodge them for Stamina XP.' },
   { id: 'transform', name: 'Transformation Training', stat: 'mastery', desc: 'Power up, transform and hold the form. Builds mastery: faster power-ups, less ki drain.', requires: 'ssj1' },
   { id: 'spar', name: 'Sparring Partner', stat: 'all', desc: 'Fight a partner who punches, blocks, dodges and fires ki. Every stat grows. Knock them down for a bonus!' },
 ];

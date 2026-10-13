@@ -11,6 +11,7 @@ import {
   OUTFITS, OUTFIT_PALETTE, OUTFIT_SECTIONS, CHARACTER_TEMPLATES, applyCharacterTemplate, randomName, defaultCharacter,
 } from '../character/options.js';
 import { formatNumber } from '../core/math.js';
+import { CONTROLS, HELP_ORDER } from './controls.js';
 
 const STAT_ACTIVITY = { strength: 'punch', ki: 'ki', speed: 'speed', stamina: 'defense' };
 const cycle = (arr, cur, dir) => (cur + dir + arr.length) % arr.length;
@@ -29,7 +30,7 @@ export class MainMenu {
     ui.background();
     ui.text('DRAGON BALL', ui.W / 2, 140, { size: 110, align: 'center', color: COLORS.gold, stroke: '#7a2a00' });
     ui.text('X', ui.W / 2, 250, { size: 120, align: 'center', color: '#ffffff', stroke: '#1a4ea8' });
-    ui.text('Saiyan Training · Phases 1–3', ui.W / 2, 315, { size: 34, align: 'center', color: COLORS.muted, weight: 'normal' });
+    ui.text('Train hard. Become a Super Saiyan!', ui.W / 2, 315, { size: 34, align: 'center', color: COLORS.muted, weight: 'normal' });
     const bw = 620;
     const x = (ui.W - bw) / 2;
     let y = 370;
@@ -47,7 +48,9 @@ export class MainMenu {
     }
     ui.button('new', 'New Warrior', x, y, bw, 100, { size: 42, onClick: () => { if (has) this.confirmNew = true; else g.newGame(); } });
     y += 120;
-    ui.button('settings', 'Settings & Comfort', x, y, bw, 90, { size: 36, onClick: () => g.openGameMenu('settings', true) });
+    ui.button('help', 'How to Play', x, y, bw, 90, { size: 36, onClick: () => g.openGameMenu('help', true) });
+    y += 110;
+    ui.button('settings', 'Settings', x, y, bw, 90, { size: 36, onClick: () => g.openGameMenu('settings', true) });
     y += 110;
     ui.text(g.isXR ? 'Point and pull the trigger to select' : 'Click to select', ui.W / 2, Math.min(y + 30, ui.H - 30), { size: 28, align: 'center', color: COLORS.muted, weight: 'normal' });
   }
@@ -79,7 +82,7 @@ export class CharacterCreator {
     const c = g.character;
     ui.background();
     ui.text('CREATE YOUR SAIYAN', ui.W / 2, 72, { size: 56, align: 'center', color: COLORS.gold });
-    ui.text('Choose an anime warrior template, then customize your look', ui.W / 2, 112, { size: 26, align: 'center', color: COLORS.muted, weight: 'normal' });
+    ui.text(g.isXR ? 'Pick a warrior, then make them your own' : 'Pick a warrior, then make them your own. Type to change the name.', ui.W / 2, 112, { size: 26, align: 'center', color: COLORS.muted, weight: 'normal' });
     if (this.keyboard) return this.drawKeyboard(ui);
     const rowH = 96;
     let y = 128;
@@ -128,7 +131,7 @@ export class CharacterCreator {
       arrowRow('build', 'Build', BUILDS, 'build');
       arrowRow('frame', 'Frame', BODY_TYPES, 'body');
       swatchRow('skin', 'Skin tone', SKIN_TONES, 'skin');
-      ui.button('reset', 'Reset to Rokan default look', valX, y + 12, valW, 72, { size: 30, onClick: () => { const n = c.name; Object.assign(c, defaultCharacter(), { name: n }); this.changed(); } });
+      ui.button('reset', `Reset to ${templates[ti].name.split(' ')[0]}'s look`, valX, y + 12, valW, 72, { size: 30, onClick: () => { const n = c.name; Object.assign(c, defaultCharacter(), { name: n }); applyCharacterTemplate(c, templates[ti].id); this.changed(); } });
     } else if (this.tab === 'face') {
       swatchRow('eye', 'Eye color', EYE_COLORS, 'eyeColor');
       arrowRow('expr', 'Expression', EXPRESSIONS, 'expression');
@@ -143,7 +146,7 @@ export class CharacterCreator {
       arrowRow('outfit', 'Outfit', OUTFITS, 'outfit');
       for (const sec of OUTFIT_SECTIONS) swatchRow(sec.key, sec.name, OUTFIT_PALETTE, sec.key);
     }
-    ui.button('preview-ssj', `Preview: ${FORMS[g.previewForm].name}`, 40, ui.H - 118, 440, 90, {
+    ui.button('preview-ssj', `See forms: ${FORMS[g.previewForm].name}`, 40, ui.H - 118, 440, 90, {
       size: 30, onClick: () => { g.togglePreviewForm(); },
     });
     ui.button('start', 'Begin Training!', ui.W - 520, ui.H - 118, 480, 90, { size: 42, color: '#b4560f', onClick: () => g.finishCreation() });
@@ -180,13 +183,13 @@ export class GameMenu {
   draw(ui) {
     const g = this.game;
     ui.background();
-    const tabs = this.fromMain ? [['settings', 'Settings']] : [['status', 'Status'], ['training', 'Training'], ['boss', 'Bosses'], ['attacks', 'Attacks'], ['settings', 'Settings']];
+    const tabs = this.fromMain ? [['help', 'How to Play'], ['settings', 'Settings']] : [['status', 'Status'], ['training', 'Training'], ['boss', 'Bosses'], ['attacks', 'Attacks'], ['help', 'Help'], ['settings', 'Settings']];
     const tw = (ui.W - 80 - (tabs.length - 1) * 12) / tabs.length;
     tabs.forEach(([id, label], i) => ui.button(`tab-${id}`, label, 40 + i * (tw + 12), 30, tw, 80, {
       size: 34, selected: this.tab === id, onClick: () => { this.tab = id; },
     }));
     const area = { x: 40, y: 140, w: ui.W - 80, h: ui.H - 280 };
-    ({ status: () => this.drawStatus(ui, area), training: () => this.drawTraining(ui, area), boss: () => this.drawBoss(ui, area), attacks: () => this.drawAttacks(ui, area), settings: () => this.drawSettings(ui, area) })[this.tab]();
+    ({ status: () => this.drawStatus(ui, area), training: () => this.drawTraining(ui, area), boss: () => this.drawBoss(ui, area), attacks: () => this.drawAttacks(ui, area), help: () => this.drawHelp(ui, area), settings: () => this.drawSettings(ui, area) })[this.tab]();
     // Footer
     const fy = ui.H - 120;
     if (this.fromMain) {
@@ -221,7 +224,7 @@ export class GameMenu {
       onClick: () => { g.closeGameMenu(); g.player.toggleFlight(); },
     });
     ui.button('act-slowmo', 'Slow Motion', a.x + 350, y + 10, 330, 80, {
-      size: 32, enabled: sf.unlocked, sub: sf.unlocked ? (g.isXR ? 'Right stick click' : 'F') : `Speed Lv ${SLOWMO_UNLOCK_LEVEL}`,
+      size: 32, enabled: sf.unlocked, sub: sf.unlocked ? (g.isXR ? 'Right stick click' : 'F') : `Unlocks at Speed Lv ${SLOWMO_UNLOCK_LEVEL}`,
       onClick: () => { g.closeGameMenu(); sf.activate(); },
     });
     // Right column: goal + transformations
@@ -258,7 +261,7 @@ export class GameMenu {
         : act.stat === 'all' ? `All stats · ${SPAR_LEVELS.find((l) => l.id === t.prefs.difficulty)?.name || 'Normal'}`
         : `Mastery Lv ${p.mastery(p.topForm() === 'base' ? 'ssj1' : p.topForm()).level}`;
       ui.button(`act-${act.id}`, act.name, a.x + (i % 2) * (colW + 20), y + Math.floor(i / 2) * 94, colW, 84, {
-        size: 32, sub, enabled: !locked, selected: t.activity === act.id && g.state === 'training',
+        size: 36, sub, enabled: !locked, selected: t.activity === act.id && g.state === 'training',
         onClick: () => { g.startTraining(act.id); },
       });
     });
@@ -270,25 +273,25 @@ export class GameMenu {
       ui.text(label, a.x, y + 50, { size: 28, color: COLORS.gold });
       const bx = a.x + 300;
       const bw = (a.w - 300 - (opts.length - 1) * 10) / opts.length;
-      opts.forEach((o, i) => ui.button(`${label}-${o.id}`, o.name, bx + i * (bw + 10), y + 6, bw, 70, {
-        size: 26, selected: o.selected, enabled: o.enabled !== false, sub: o.sub, onClick: () => onPick(o.id),
+      opts.forEach((o, i) => ui.button(`${label}-${o.id}`, o.name, bx + i * (bw + 10), y + 6, bw, 76, {
+        size: 30, selected: o.selected, enabled: o.enabled !== false, sub: o.sub, onClick: () => onPick(o.id),
       }));
-      y += 82;
+      y += 88;
     };
-    row('Partner', SPAR_LEVELS.map((l) => ({ id: l.id, name: l.name, selected: t.prefs.difficulty === l.id })), (id) => {
+    if (t.activity === 'spar') row('Partner', SPAR_LEVELS.map((l) => ({ id: l.id, name: l.name, selected: t.prefs.difficulty === l.id })), (id) => {
       t.setDifficulty(id);
       if (g.state === 'training') g.startTraining('spar');
     });
     row('Gravity', GRAVITY_LEVELS.map((l) => {
       const open = p.data.gravityUnlocked.includes(l.g);
-      return { id: l.g, name: `${l.g}x`, selected: t.gravity === l.g, enabled: open, sub: open ? undefined : `PL ${formatNumber(l.powerLevel)}` };
+      return { id: l.g, name: `${l.g}x`, selected: t.gravity === l.g, enabled: open, sub: open ? undefined : `Need PL ${formatNumber(l.powerLevel)}` };
     }), (v) => t.setGravity(v));
     const tc = p.data.timeChamber.unlocked;
     row('Location', [
       { id: 'arena', name: 'Training Grounds', selected: t.location === 'arena' },
-      { id: 'timechamber', name: 'Time Chamber', selected: t.location === 'timechamber', enabled: tc, sub: tc ? `Day ${t.chamberDays()} · 3x XP` : `PL ${formatNumber(TIME_CHAMBER_UNLOCK.powerLevel)}` },
+      { id: 'timechamber', name: 'Time Chamber', selected: t.location === 'timechamber', enabled: tc, sub: tc ? `Day ${t.chamberDays()} · 3x XP` : `Need PL ${formatNumber(TIME_CHAMBER_UNLOCK.powerLevel)}` },
       { id: 'kali', name: "King Kali's", selected: t.location === 'kali', sub: '2x XP' },
-      { id: 'zui', name: 'Planet Zui', selected: t.location === 'zui', sub: 'Brawl' },
+      { id: 'zui', name: 'Planet Zui', selected: t.location === 'zui', sub: 'Crowd battle' },
     ], (id) => g.fadeTo(() => { t.setLocation(id); g.resetPlayerPosition(); }));
     const lv = GRAVITY_LEVELS.find((l) => l.g === t.gravity);
     if (lv?.recommended && p.basePowerLevel() < lv.recommended) {
@@ -301,7 +304,7 @@ export class GameMenu {
     let y = a.y;
     const pl = g.currentPowerLevel();
     const top = g.progress.powerLevel(g.progress.topForm());
-    ui.text('Challenge any boss at any Power Level. Damage scales with the gap.', a.x, y + 24, { size: 24, color: COLORS.muted, weight: 'normal' });
+    ui.text('Fight any boss you like. The stronger they are, the harder they hit!', a.x, y + 24, { size: 24, color: COLORS.muted, weight: 'normal' });
     y += 40;
     for (const b of BOSSES) {
       const beaten = g.progress.beat(b.id);
@@ -320,31 +323,31 @@ export class GameMenu {
   drawAttacks(ui, a) {
     const g = this.game;
     const p = g.progress;
-    ui.text('EQUIPPED (4 slots)', a.x, a.y + 30, { size: 30, color: COLORS.muted });
+    if (this.slot == null) this.slot = 0;
+    ui.text('YOUR 4 ATTACK SLOTS', a.x, a.y + 30, { size: 30, color: COLORS.gold });
+    ui.text(`1. Pick a slot   2. Pick an attack below`, a.x + a.w, a.y + 30, { size: 26, color: COLORS.muted, align: 'right', weight: 'normal' });
+    const sw = (a.w + 12) / 4;
     p.data.equipped.forEach((id, i) => {
       const atk = id ? ATTACKS[id] : null;
-      ui.button(`slot-${i}`, atk ? atk.name : 'Empty slot', a.x + i * ((a.w + 12) / 4), a.y + 50, (a.w + 12) / 4 - 12, 80, {
-        size: 28, selected: atk && g.player.equippedAttack().id === atk.id, enabled: !!atk,
+      ui.button(`slot-${i}`, atk ? atk.name : `Slot ${i + 1}: empty`, a.x + i * sw, a.y + 50, sw - 12, 80, {
+        size: 28, selected: this.slot === i, sub: atk && g.player.equippedAttack().id === atk.id ? 'In your hand now' : undefined,
         onClick: () => { this.slot = i; if (id) { const eq = p.data.equipped.filter(Boolean); g.player.selectedAttack = eq.indexOf(id); } },
       });
     });
-    if (this.slot == null) this.slot = 0;
-    ui.text(`Tap an attack below to put it in slot ${this.slot + 1}`, a.x + a.w, a.y + 30, { size: 24, color: COLORS.muted, align: 'right', weight: 'normal' });
-    let y = a.y + 170;
-    ui.text('Attack', a.x, y, { size: 26, color: COLORS.muted });
-    ui.text('Dmg', a.x + 520, y, { size: 26, color: COLORS.muted });
-    ui.text('Ki', a.x + 620, y, { size: 26, color: COLORS.muted });
-    ui.text('Charge', a.x + 700, y, { size: 26, color: COLORS.muted });
-    ui.text('Cooldown', a.x + 830, y, { size: 26, color: COLORS.muted });
-    ui.text('Unlock', a.x + 990, y, { size: 26, color: COLORS.muted });
-    y += 12;
+    let y = a.y + 175;
+    ui.text('Attack', a.x, y, { size: 24, color: COLORS.muted });
+    ui.text('Power', a.x + 540, y, { size: 24, color: COLORS.muted });
+    ui.text('Ki cost', a.x + 720, y, { size: 24, color: COLORS.muted });
+    ui.text('How to get it', a.x + 860, y, { size: 24, color: COLORS.muted });
+    const maxDmg = Math.max(...ATTACK_ORDER.map((id) => ATTACKS[id].damage));
+    y += 8;
     for (const id of ATTACK_ORDER) {
       const atk = ATTACKS[id];
       const has = p.data.unlockedAttacks.includes(id);
       const col = has ? COLORS.text : '#7b84a8';
-      y += 44;
+      y += 50;
       if (has) {
-        ui.button(`equip-${id}`, '', a.x - 10, y - 34, 510, 44, {
+        ui.button(`equip-${id}`, '', a.x - 10, y - 36, 530, 48, {
           size: 1, color: p.data.equipped.includes(id) ? '#2a4a8a' : undefined,
           onClick: () => {
             const eq = p.data.equipped;
@@ -356,25 +359,47 @@ export class GameMenu {
           },
         });
       }
-      ui.text(`${has ? '★' : '◇'} ${atk.name}`, a.x, y, { size: 28, color: col, maxWidth: 500 });
-      ui.text(String(atk.damage), a.x + 520, y, { size: 26, color: col, weight: 'normal' });
-      ui.text(String(atk.kiCost), a.x + 620, y, { size: 26, color: col, weight: 'normal' });
-      ui.text(`${atk.chargeTime}s`, a.x + 700, y, { size: 26, color: col, weight: 'normal' });
-      ui.text(`${atk.cooldown}s`, a.x + 830, y, { size: 26, color: col, weight: 'normal' });
-      ui.text(has ? 'Unlocked' : atk.unlock.label, a.x + 990, y, { size: 22, color: col, weight: 'normal', maxWidth: a.w - 990 });
+      ui.text(`${has ? '★' : '◇'} ${atk.name}`, a.x, y, { size: 28, color: col, maxWidth: 510 });
+      // Power as a bar (Kaio-ken is a boost, not a hit).
+      if (atk.damage > 0) ui.bar(a.x + 540, y - 24, 150, 22, Math.max(0.06, Math.sqrt(atk.damage / maxDmg)), has ? '#ff8a1a' : '#4a4f6a');
+      else ui.text('Boost', a.x + 540, y, { size: 24, color: col, weight: 'normal' });
+      ui.text(String(atk.kiCost), a.x + 720, y, { size: 26, color: col, weight: 'normal' });
+      ui.text(has ? (p.data.equipped.includes(id) ? 'Equipped' : 'Ready to equip') : atk.unlock.label, a.x + 860, y, { size: 22, color: has ? COLORS.green : col, weight: 'normal', maxWidth: a.w - 860 });
     }
+    ui.text(`Fire: ${g.isXR ? 'trigger' : 'right click'}   ·   Switch attack: ${g.isXR ? 'B button' : 'E'}   ·   Big attacks: hold to charge, let go to fire`, a.x + a.w / 2, a.y + a.h - 6, { size: 24, color: COLORS.muted, align: 'center', weight: 'normal', maxWidth: a.w });
+  }
+
+  // How to Play: the buttons for this device, and what you're aiming for.
+  drawHelp(ui, a) {
+    const g = this.game;
+    ui.text(g.isXR ? 'HOW TO PLAY · QUEST CONTROLLERS' : 'HOW TO PLAY · KEYBOARD & MOUSE', a.x, a.y + 30, { size: 30, color: COLORS.gold });
+    const half = (a.w - 40) / 2;
+    const rows = Math.ceil(HELP_ORDER.length / 2);
+    HELP_ORDER.forEach((id, i) => {
+      const c = CONTROLS[id];
+      const x = a.x + (i < rows ? 0 : half + 40);
+      const y = a.y + 56 + (i % rows) * 72;
+      ui.g.fillStyle = 'rgba(255,255,255,0.06)';
+      ui.g.fillRect(x, y, half, 62);
+      ui.text(c.what, x + 18, y + 41, { size: 28, color: COLORS.text, maxWidth: half * 0.5 });
+      ui.text(g.isXR ? c.vr : c.desktop, x + half - 18, y + 41, { size: 26, color: COLORS.blue, align: 'right', maxWidth: half * 0.48 });
+    });
+    let y = a.y + 56 + rows * 72 + 40;
+    ui.text('YOUR GOAL', a.x, y, { size: 28, color: COLORS.gold });
+    y = ui.wrap('Train to raise your Power Level. Each training spot grows a different stat. At Power Level 5,000 you unlock Super Saiyan! Then beat the bosses to unlock stronger forms and attacks. The portal by the training grounds takes you to other planets.', a.x, y + 36, a.w, { size: 26, color: COLORS.text });
   }
 
   drawSettings(ui, a) {
     const g = this.game;
     const s = g.settings;
     let y = a.y;
+    const LABEL = 250;
     const row = (label, options, current, onPick, x = a.x, w = a.w) => {
-      ui.text(label, x, y + 52, { size: 30, color: COLORS.muted });
-      const bx = x + 330;
-      const bw = (w - 330 - (options.length - 1) * 10) / options.length;
+      ui.text(label, x, y + 52, { size: 28, color: COLORS.muted, maxWidth: LABEL - 10 });
+      const bx = x + LABEL;
+      const bw = (w - LABEL - (options.length - 1) * 10) / options.length;
       options.forEach(([val, name], i) => ui.button(`${label}-${val}`, name, bx + i * (bw + 10), y + 8, bw, 64, {
-        size: 28, selected: current === val, onClick: () => { onPick(val); g.applySettings(); },
+        size: 26, selected: current === val, onClick: () => { onPick(val); g.applySettings(); },
       }));
       y += 82;
     };
@@ -382,23 +407,32 @@ export class GameMenu {
     const left = a.x;
     const right = a.x + half + 40;
     const y0 = y;
-    ui.text('GRAPHICS', left, y + 20, { size: 28, color: COLORS.gold });
+    ui.text('PICTURE & SOUND', left, y + 20, { size: 28, color: COLORS.gold });
     y += 30;
-    row('Preset', Object.entries(GRAPHICS_PRESETS).map(([k, v]) => [k, v.label]), s.graphics, (v) => { s.graphics = v; }, left, half);
-    row('Auto quality', [[true, 'On'], [false, 'Off']], s.autoQuality, (v) => { s.autoQuality = v; }, left, half);
-    row('Effects', [['low', 'Low'], ['medium', 'Med'], ['high', 'High']], s.visualIntensity, (v) => { s.visualIntensity = v; }, left, half);
-    row('Haptics', [[true, 'On'], [false, 'Off']], s.haptics, (v) => { s.haptics = v; }, left, half);
-    row('Volume', [[0, 'Off'], [0.4, '40%'], [0.8, '80%'], [1, 'Max']], s.masterVolume, (v) => { s.masterVolume = v; }, left, half);
+    row('Graphics', Object.entries(GRAPHICS_PRESETS).map(([k, v]) => [k, v.label]), s.graphics, (v) => { s.graphics = v; }, left, half);
+    row('Auto-adjust', [[true, 'On'], [false, 'Off']], s.autoQuality, (v) => { s.autoQuality = v; }, left, half);
+    row('Effects', [['low', 'Calm'], ['medium', 'Normal'], ['high', 'Wild']], s.visualIntensity, (v) => { s.visualIntensity = v; }, left, half);
+    row('Sound', [[0, 'Off'], [0.4, 'Low'], [0.8, 'Mid'], [1, 'Loud']], s.masterVolume, (v) => { s.masterVolume = v; }, left, half);
     row('Blood & scars', [[true, 'On'], [false, 'Off']], s.battleDamage !== false, (v) => { s.battleDamage = v; }, left, half);
-    ui.text(`FPS ${Math.round(g.perf.fps)}${g.perf.reduced ? ' · auto-reduced' : ''}`, left, y + 40, { size: 24, color: COLORS.muted, weight: 'normal' });
+    if (g.isXR) row('Rumble', [[true, 'On'], [false, 'Off']], s.haptics, (v) => { s.haptics = v; }, left, half);
+    ui.wrap('Auto-adjust lowers the graphics by itself if the game starts to stutter.', left, y + 34, half, { size: 22 });
+    ui.text(`Running at ${Math.round(g.perf.fps)} frames per second`, left, y + 100, { size: 22, color: COLORS.muted, weight: 'normal' });
     y = y0;
-    ui.text('VR COMFORT', right, y + 20, { size: 28, color: COLORS.gold });
-    y += 30;
-    row('Turning', [['snap', 'Snap'], ['smooth', 'Smooth']], s.turnMode, (v) => { s.turnMode = v; }, right, half);
-    row('Snap angle', [[30, '30°'], [45, '45°'], [90, '90°']], s.snapAngle, (v) => { s.snapAngle = v; }, right, half);
-    row('Movement', [['smooth', 'Smooth'], ['teleport', 'Teleport']], s.moveMode, (v) => { s.moveMode = v; }, right, half);
-    row('Vignette', [[true, 'On'], [false, 'Off']], s.vignette, (v) => { s.vignette = v; }, right, half);
-    row('Play mode', [[false, 'Standing'], [true, 'Seated']], s.seated, (v) => { s.seated = v; }, right, half);
+    if (g.isXR) {
+      ui.text('VR COMFORT', right, y + 20, { size: 28, color: COLORS.gold });
+      y += 30;
+      row('Turning', [['snap', 'Snap'], ['smooth', 'Smooth']], s.turnMode, (v) => { s.turnMode = v; }, right, half);
+      row('Snap angle', [[30, '30°'], [45, '45°'], [90, '90°']], s.snapAngle, (v) => { s.snapAngle = v; }, right, half);
+      row('Moving', [['smooth', 'Walk'], ['teleport', 'Teleport']], s.moveMode, (v) => { s.moveMode = v; }, right, half);
+      row('Comfort edges', [[true, 'On'], [false, 'Off']], s.vignette, (v) => { s.vignette = v; }, right, half);
+      row('Play mode', [[false, 'Standing'], [true, 'Seated']], s.seated, (v) => { s.seated = v; }, right, half);
+      ui.wrap('Feeling dizzy? Use Snap turning, Teleport and Comfort edges On.', right, y + 34, half, { size: 22 });
+    } else {
+      ui.text('CONTROLS', right, y + 20, { size: 28, color: COLORS.gold });
+      y += 30;
+      row('Mouse speed', [[0.5, 'Slow'], [1, 'Normal'], [1.6, 'Fast']], s.mouseSensitivity ?? 1, (v) => { s.mouseSensitivity = v; }, right, half);
+      ui.wrap('VR comfort options (turning, teleport, seated play) show up here when you play in a headset.', right, y + 34, half, { size: 22 });
+    }
   }
 }
 

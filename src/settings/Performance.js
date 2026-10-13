@@ -40,7 +40,6 @@ export class PerformanceMonitor {
         this.lowWindows = 0;
         this.reduced = true;
         g.applyDynamicQuality();
-        bus.emit('hud:message', { text: 'Auto quality: reducing effects', color: '#aab3d6' });
       }
     } else {
       this.lowWindows = 0;

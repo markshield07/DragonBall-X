@@ -236,7 +236,7 @@ export class Progression {
     const next = FORM_ORDER.map((id) => FORMS[id]).find((f) => f.unlock && !this.isFormUnlocked(f.id));
     const lastForm = [...this.data.unlockedForms].sort((a, b) => FORM_ORDER.indexOf(b) - FORM_ORDER.indexOf(a))[0];
     if (lastForm !== 'base' && !this.data.transformCount[lastForm]) {
-      return { title: `Transform: ${FORMS[lastForm].name}!`, detail: 'Hold both grips (Space) to power up, then press A (T). Repeat to climb forms.', progress: 1 };
+      return { title: `Transform: ${FORMS[lastForm].name}!`, detail: 'Power up until the bar is full, then transform. Repeat to climb forms.', progress: 1 };
     }
     if (next) {
       const prev = FORM_ORDER[FORM_ORDER.indexOf(next.id) - 1];

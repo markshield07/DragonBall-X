@@ -39,6 +39,7 @@ export class DesktopInput {
     this.handOffset = { left: REST.left.clone(), right: REST.right.clone() };
     this.handRot = { left: new THREE.Quaternion(), right: new THREE.Quaternion() };
     this.sensitivity = 0.0022;
+    this.lookSpeed = 1; // from settings (mouse sensitivity)
     this.enabled = false;
     // On-screen buttons (Fly / Slow-Mo) press these for one frame.
     this.virtual = { fly: false, slowmo: false };
@@ -68,8 +69,8 @@ export class DesktopInput {
       this.mouse.x = ((e.clientX - r.left) / r.width) * 2 - 1;
       this.mouse.y = -((e.clientY - r.top) / r.height) * 2 + 1;
       if (this.locked) {
-        this.yaw -= e.movementX * this.sensitivity;
-        this.pitch -= e.movementY * this.sensitivity;
+        this.yaw -= e.movementX * this.sensitivity * this.lookSpeed;
+        this.pitch -= e.movementY * this.sensitivity * this.lookSpeed;
         this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch));
       }
     });

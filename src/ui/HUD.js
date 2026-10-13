@@ -5,6 +5,7 @@ import { formatNumber } from '../core/math.js';
 import { roundRect, COLORS, healthColor } from './Panel.js';
 import { BOSSES } from '../boss/bosses.js';
 import { Portrait } from './Portrait.js';
+import { key } from './controls.js';
 
 // Status HUD drawn on one canvas. On desktop the canvas itself is shown as a
 // DOM overlay; in VR the same canvas is a texture on a wrist display above
@@ -140,11 +141,11 @@ export class HUD {
     const tr = game.transformation;
     if (tr.charge > 0.01 || tr.state === 'transforming') {
       const can = tr.canTransform();
-      bar(28, 296, 712, 30, tr.charge, can.ok ? '#ffcc33' : '#bfe6ff', can.ok ? 'READY! PRESS A / T TO TRANSFORM' : 'POWERING UP');
+      bar(28, 296, 712, 30, tr.charge, can.ok ? '#ffcc33' : '#bfe6ff', can.ok ? `READY! PRESS ${key(game, 'transform').toUpperCase()} TO TRANSFORM` : 'POWERING UP');
     } else {
       const atk = p.equippedAttack();
       text(`Attack: ${atk.name}`, 28, 320, 28, COLORS.blue);
-      text(game.isXR ? 'B: switch' : 'E: switch', W - 28, 320, 24, COLORS.muted, 'right');
+      text(`${key(game, 'switchAttack')}: switch`, W - 28, 320, 24, COLORS.muted, 'right');
     }
 
     // Boss bar or next goal
@@ -167,7 +168,7 @@ export class HUD {
     if (this.message) {
       text(this.message.text, W / 2, 492, 30, this.message.color, 'center');
     } else if (!game.isXR) {
-      text('Tab: menu  Space: power up  T: transform  G: fly  F: slow-mo', W / 2, 492, 22, 'rgba(255,255,255,0.45)', 'center', 'normal');
+      text('Tab: menu  ·  Space: power up  ·  T: transform  ·  G: fly', W / 2, 492, 22, 'rgba(255,255,255,0.45)', 'center', 'normal');
     }
     this.texture.needsUpdate = true;
   }

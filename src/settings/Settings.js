@@ -43,6 +43,7 @@ export function defaultSettings() {
     masterVolume: 0.8,
     battleDamage: true, // blood, cuts and bruises at low health
     dominantHand: 'right',
+    mouseSensitivity: 1, // desktop look speed multiplier
   };
 }
 

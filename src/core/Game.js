@@ -31,6 +31,7 @@ import { SaveSystem } from '../save/SaveSystem.js';
 import { loadSettings, GRAPHICS_PRESETS, VISUAL_INTENSITY } from '../settings/Settings.js';
 import { PerformanceMonitor } from '../settings/Performance.js';
 import { audio } from '../audio/Audio.js';
+import { key } from '../ui/controls.js';
 import { HUD } from '../ui/HUD.js';
 import { Banner } from '../ui/Banner.js';
 import { UIManager } from '../ui/UIManager.js';
@@ -163,6 +164,7 @@ export class Game {
     this.perf.reset();
     this.applyDynamicQuality();
     this.audio.setVolume(this.settings.masterVolume);
+    this.desktopInput.lookSpeed = this.settings.mouseSensitivity ?? 1;
     this.player.applySeated();
     this.gameMenu.panel.dirty = true;
   }
@@ -412,6 +414,7 @@ export class Game {
     this.banner.push({ title: `Welcome, ${this.character.name}!`, subtitle: 'Train to unlock SUPER SAIYAN', duration: 3 });
     this.banner.push({ title: 'Punch the dummy!', subtitle: this.isXR ? 'Swing your fists for real' : 'Left click to punch', duration: 3 });
     this.banner.push({ title: 'Fire ki blasts', subtitle: this.isXR ? 'Pull the trigger to shoot from your hand' : 'Right click to fire', duration: 3 });
+    this.banner.push({ title: 'Need help?', subtitle: `${key(this, 'menu')} opens the menu. Help shows every button.`, duration: 3.5 });
   }
 
   startTraining(activity = 'punch') {
@@ -457,6 +460,7 @@ export class Game {
       this.boss.start(def.id);
     });
     this.hud.setMode(this.isXR, true);
+    this.banner.clear(); // drop any leftover training tips
     this.banner.push({ title: 'BOSS BATTLE', subtitle: `${def.name} · Power Level ${formatNumber(def.powerLevel)}`, color: '#ff6a6a', duration: 2.6, big: true });
     this.updatePointerMode();
   }
@@ -480,14 +484,14 @@ export class Game {
       const top = this.progress.topForm();
       lines.push(`${def.name}'s Power Level is ${formatNumber(def.powerLevel)}. Yours is ${formatNumber(pl)}${top !== 'base' ? ` (${formatNumber(this.progress.powerLevel(top))} as ${FORMS[top].name})` : ''}.`);
       const tips = [];
-      if (top !== 'base' && this.lastFightForm !== top) tips.push(`transform into ${FORMS[top].name} early (power up, press A / T, repeat to climb forms)`);
+      if (top !== 'base' && this.lastFightForm !== top) tips.push(`transform into ${FORMS[top].name} early (${key(this, 'powerUp').toLowerCase()}, then press ${key(this, 'transform')}; repeat to climb forms)`);
       if (top === 'base') tips.push(`train to Power Level 5,000 to unlock Super Saiyan (your lowest stat is ${STAT_LABELS[this.progress.lowestStat()]})`);
       if (def.attacks.slam) tips.push('get out of the red ring before the slam lands');
       if (def.attacks.beam) tips.push('step out of the red aim line when the beam charges');
       if (def.attacks.barrier) tips.push('punch through the purple barrier, ki is absorbed');
       if (def.attacks.teleport) tips.push('turn around when you hear BEHIND YOU');
-      tips.push('block (left grip / Q) when a fist glows red');
-      if (this.speedFocus.unlocked) tips.push('use slow motion (right stick click / F) to read big attacks');
+      tips.push(`block (${key(this, 'block').toLowerCase()}) when a fist glows red`);
+      if (this.speedFocus.unlocked) tips.push(`use slow motion (${key(this, 'slowmo').toLowerCase()}) to read big attacks`);
       lines.push(`Tip: ${tips.slice(0, 2).join('; ')}.`);
     }
     this.result.set({ win, lines });
@@ -589,7 +593,7 @@ export class Game {
       this.addShake(k);
       if (k > 0.04) { this.haptic('left', clamp(k * 4, 0.15, 1), 40 + 200 * k); this.haptic('right', clamp(k * 4, 0.15, 1), 40 + 200 * k); }
     });
-    bus.on('ki:empty', () => bus.emit('hud:message', { text: 'Not enough ki! Power up (both grips / Space)', color: '#4cc3ff' }));
+    bus.on('ki:empty', () => bus.emit('hud:message', { text: `Not enough ki! Power up: ${key(this, 'powerUp').toLowerCase()}`, color: '#4cc3ff' }));
     bus.on('attack:selected', (a) => bus.emit('hud:message', { text: `Equipped: ${a.attack.name}`, color: '#4cc3ff' }));
     bus.on('player:hit', (h) => {
       if (h.blocked) this.audio.block(); else this.audio.hurt();

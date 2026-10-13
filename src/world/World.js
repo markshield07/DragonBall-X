@@ -39,8 +39,10 @@ export class World {
     this.center = { cx: NaN, cz: NaN };
     this.queue = [];
     this.props = buildPropTemplates();
-    // Ocean and lakes: one big disc that follows you.
-    this.water = new THREE.Mesh(new THREE.CircleGeometry(900, 64).rotateX(-Math.PI / 2), toon(0x2f8fd8, { shared: false }));
+    // Ocean and lakes: one big disc that follows you. Built from many rings
+    // rather than long thin slices: some GPUs mis-clip giant triangles that
+    // pass under the camera and drew the sea over the ground at your feet.
+    this.water = new THREE.Mesh(buildWaterDisc(900), toon(0x2f8fd8, { shared: false }));
     this.water.material.emissive = new THREE.Color(0x0a2a55);
     this.water.position.y = SEA;
     this.water.name = 'water';
@@ -454,3 +456,35 @@ function scatterProps(cx, cz, T) {
   }
   return out;
 }
+
+// A flat disc in rings that grow outward (fine near the middle, where you
+// are, coarse at the horizon), facing up.
+function buildWaterDisc(radius) {
+  const radii = [0];
+  for (let r = 4; r < radius; r *= 1.35) radii.push(r);
+  radii.push(radius);
+  const seg = 64;
+  const pos = [];
+  const idx = [];
+  pos.push(0, 0, 0);
+  for (let k = 1; k < radii.length; k++) {
+    for (let i = 0; i < seg; i++) {
+      const a = (i / seg) * Math.PI * 2;
+      pos.push(Math.cos(a) * radii[k], 0, -Math.sin(a) * radii[k]);
+    }
+  }
+  const ring = (k) => 1 + (k - 1) * seg;
+  for (let i = 0; i < seg; i++) idx.push(0, ring(1) + i, ring(1) + ((i + 1) % seg));
+  for (let k = 1; k < radii.length - 1; k++) {
+    for (let i = 0; i < seg; i++) {
+      const a = ring(k) + i, b = ring(k) + ((i + 1) % seg), c = ring(k + 1) + i, d = ring(k + 1) + ((i + 1) % seg);
+      idx.push(a, c, d, a, d, b);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  return geo;
+}
+
