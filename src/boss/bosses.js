@@ -1,6 +1,8 @@
 // The five villains. Every boss can be challenged at any Power Level: the
 // Power Level gap scales damage both ways (see Boss.js), so an early attempt
 // is brutal and a return visit after training feels very different.
+// Their Power Levels sit near what you'd have in the form you usually face
+// them in: Raxor ~SSJ1, Veyron ~SSJ2, Kurog ~SSJ3, Zareth ~SSJ4, the last ~SSJ5.
 //
 // attacks: weighted moves the AI picks from. Moves are implemented in Boss.js:
 //   punch   telegraphed melee (glowing fist + red disc under you; step away or block)
@@ -17,7 +19,7 @@
 export const BOSSES = [
   {
     id: 'raxor', name: 'Raxor', title: 'Aggressive Alien Fighter', phase: 1,
-    powerLevel: 18000, maxHealth: 420, damage: 1, speed: 1, scale: 1.18,
+    powerLevel: 15000, maxHealth: 420, damage: 1, speed: 1, scale: 1.18,
     look: { skin: 0x3fae9a, armor: 0x9e1f2a, dark: 0x2a1a2e, bone: 0xe8e0d0, eyes: 0xff2a2a, horns: true, spikes: true, crest: true },
     aura: { color: 0xff4a6a, core: 0xffc0d0 },
     orb: 0xff9a1a,
@@ -35,7 +37,7 @@ export const BOSSES = [
   },
   {
     id: 'veyron', name: 'Lord Veyron', title: 'Commander of Purple Ki', phase: 2,
-    powerLevel: 900000, maxHealth: 900, damage: 1.25, speed: 1.25, scale: 1.1,
+    powerLevel: 50000, maxHealth: 900, damage: 1.25, speed: 1.25, scale: 1.1,
     look: { skin: 0xc9b8e8, armor: 0x5a2d91, dark: 0x1d1530, bone: 0xf2e6ff, eyes: 0xff4ae0, cape: 0x3a1a5e, crest: true, shoulderPads: true },
     aura: { color: 0xa04aff, core: 0xf0c0ff },
     orb: 0xc05aff,
@@ -53,7 +55,7 @@ export const BOSSES = [
   },
   {
     id: 'kurog', name: 'Titan Kurog', title: 'Colossal Warrior', phase: 2,
-    powerLevel: 3500000, maxHealth: 1300, damage: 1.6, speed: 0.85, scale: 1.65,
+    powerLevel: 140000, maxHealth: 1300, damage: 1.6, speed: 0.85, scale: 1.65,
     look: { skin: 0xb5703c, armor: 0x5c5f66, dark: 0x2a2420, bone: 0xf0e2c0, eyes: 0xffd21a, horns: true, bulky: true, tusks: true },
     aura: { color: 0xff8a1a, core: 0xffe0a0 },
     orb: 0xff6a1a,
@@ -71,7 +73,7 @@ export const BOSSES = [
   },
   {
     id: 'zareth', name: 'Emperor Zareth', title: 'Cosmic Teleporter', phase: 3,
-    powerLevel: 40000000, maxHealth: 1700, damage: 2, speed: 1.35, scale: 1.12,
+    powerLevel: 400000, maxHealth: 1700, damage: 2, speed: 1.35, scale: 1.12,
     look: { skin: 0xe8ecf4, armor: 0x1a2a6a, dark: 0x0c1028, bone: 0xffd84a, eyes: 0x3af0ff, crown: true, halo: true, shoulderPads: true },
     aura: { color: 0x3a8aff, core: 0xd0f0ff },
     orb: 0x5ac8ff,
@@ -89,7 +91,7 @@ export const BOSSES = [
   },
   {
     id: 'draykon', name: 'Omega Draykon', title: 'The Ultimate Enemy', phase: 3,
-    powerLevel: 900000000, maxHealth: 2400, damage: 2.4, speed: 1.2, scale: 1.3,
+    powerLevel: 1200000, maxHealth: 2400, damage: 2.4, speed: 1.2, scale: 1.3,
     look: { skin: 0x2a2a34, armor: 0x8a0f1a, dark: 0x101014, bone: 0xd0d0e0, eyes: 0xff1a1a, horns: true, spikes: true, wings: true, tail: true },
     aura: { color: 0xff1a3a, core: 0xffa0a0 },
     orb: 0xff2a4a,

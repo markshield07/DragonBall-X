@@ -204,3 +204,10 @@ export function roundRect(g, x, y, w, h, r) {
   g.arcTo(x, y, x + w, y, r);
   g.closePath();
 }
+
+
+// Health bar color: green when fresh, through yellow and orange, to red.
+export function healthColor(f) {
+  const h = Math.max(0, Math.min(1, f)) * 120;
+  return `hsl(${h}, 85%, ${45 + (1 - f) * 5}%)`;
+}

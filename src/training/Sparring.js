@@ -1,13 +1,15 @@
 import * as THREE from 'three';
 import { PowerUpFX } from '../fx/PowerUpFX.js';
 import { bus } from '../core/events.js';
-import { rand, damp } from '../core/math.js';
+import { rand, damp, clamp } from '../core/math.js';
 import { createAvatar } from '../character/createAvatar.js';
 import { Aura } from '../fx/Aura.js';
 import { BattleDamage } from '../fx/BattleDamage.js';
 import { CHARACTER_TEMPLATES, defaultCharacter } from '../character/options.js';
 import { glowMaterial } from '../render/toon.js';
 import { Knockdown } from '../combat/Knockdown.js';
+import { Dizzy } from '../fx/Dizzy.js';
+import { healthColor } from '../ui/Panel.js';
 
 // Sparring partner difficulty. Higher levels attack faster, block and dodge
 // more, hit harder and give more XP. Master sparring partners go Super Saiyan.
@@ -20,6 +22,7 @@ export const SPAR_LEVELS = [
 
 const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
+const _X = new THREE.Vector3(1, 0, 0);
 
 // A humanoid training partner built on the player's own character rig.
 // Non-lethal: they spar, you learn. Punch them (Strength XP), hit them with
@@ -62,6 +65,34 @@ export class Sparring {
     };
     this.registered = false;
     this.shadow = false;
+    this.dizzy = new Dizzy(this.group);
+    // Health bar over their head: green when fresh, red when beaten up.
+    const c = document.createElement('canvas');
+    c.width = 128; c.height = 16;
+    this.barCanvas = c;
+    this.barTex = new THREE.CanvasTexture(c);
+    this.barTex.colorSpace = THREE.SRGBColorSpace;
+    this.bar = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.barTex, transparent: true, depthWrite: false, depthTest: false }));
+    this.bar.scale.set(0.62, 0.078, 1);
+    this.bar.renderOrder = 19;
+    this.group.add(this.bar);
+    this.barShown = -1;
+  }
+
+  drawBar() {
+    const f = clamp(this.health / this.maxHealth, 0, 1);
+    if (Math.abs(f - this.barShown) < 0.004) return;
+    this.barShown = f;
+    const c = this.barCanvas;
+    const x = c.getContext('2d');
+    x.clearRect(0, 0, c.width, c.height);
+    x.fillStyle = 'rgba(10,12,20,0.8)';
+    x.fillRect(0, 0, c.width, c.height);
+    x.fillStyle = healthColor(f);
+    x.fillRect(2, 2, (c.width - 4) * f, c.height - 4);
+    x.fillStyle = 'rgba(255,255,255,0.35)';
+    x.fillRect(2, 2, (c.width - 4) * f, 4);
+    this.barTex.needsUpdate = true;
   }
 
   get scale() { return this.avatar ? this.avatar.body.scale.x : 1; }
@@ -141,6 +172,7 @@ export class Sparring {
     }
     const dmg = hit.damage;
     this.health = Math.max(0, this.health - dmg);
+    const hp = this.health / this.maxHealth;
     if (hit.kind !== 'beam' || Math.random() < 0.35) g.effects.number(hit.point.clone().add(_v.set(0, 0.25, 0)), Math.round(dmg), hit.finisher ? '#ffcc33' : '#ffffff', hit.finisher);
     this.wounds.hit(hit.point, hit.dir, this.health / this.maxHealth, hit.power || 0.5);
     _v.copy(hit.dir).setY(0).normalize();
@@ -152,15 +184,22 @@ export class Sparring {
       g.training.sessionXp += g.progress.addXp('ki', (hit.charged ? 4 : 2) * xpK, 'spar-ki');
     }
     this.wobble = Math.min(1, (this.wobble || 0) + 0.5 + (hit.power || 0.4) * 0.5);
-    if (this.health <= 0) { this.knockDown(hit.dir); return; }
+    if (this.health <= 0) { this.knockDown(hit); return; }
     const heavy = hit.finisher || hit.sphere || (hit.charged && (hit.energy || 0) > 1.1) || (hit.kind === 'punch' && hit.power > 0.9);
     if (heavy && this.state !== 'knocked' && (hit.finisher || hit.sphere || Math.random() < 0.6)) {
       this.fistGlow.material.opacity = 0;
-      this.kd.start(hit.dir, hit.sphere ? 1.1 : hit.finisher ? 0.8 : 0.6, { lie: 0.6 });
+      this.kd.start(hit.dir, hit.sphere ? 1.1 : hit.finisher ? 0.8 : 0.6, { lie: 0.6, size: this.scale, style: Knockdown.pickStyle(hit, hp), health: hp });
       this.knock.set(0, 0, 0);
       g.effects.impact(this.center.clone(), 0xffffff, 1);
       this.enter('knocked', 0);
       return;
+    }
+    // A hard blow for their health leaves them dazed: swaying, arms
+    // hanging, seeing stars. Bigger hits stun longer.
+    if (this.state !== 'knocked') {
+      const stun = clamp((dmg / this.maxHealth) * 14 + (hit.charged ? 0.25 : 0) + (hit.energy || 0) * 0.15 - 0.35, 0, 2.4);
+      if (this.state === 'stunned') { this.timer = Math.min(this.timer + stun * 0.25, 2.4); return; }
+      if (stun > 0.45) { this.fistGlow.material.opacity = 0; this.enter('stunned', stun); return; }
     }
     if (['windup', 'idle', 'approach'].includes(this.state) && (hit.power > 0.6 || hit.finisher || Math.random() < 0.25)) {
       this.fistGlow.material.opacity = 0;
@@ -179,10 +218,12 @@ export class Sparring {
     this.enter('recover', 0.3);
   }
 
-  knockDown(dir = null) {
+  knockDown(hit = null) {
     const g = this.game;
     // Sent flying by the winning blow; stays down a moment, then gets back up.
-    this.kd.start(dir || this.group.getWorldDirection(_w).negate(), 1.1, { lie: 1.6 });
+    const dir = hit?.dir || this.group.getWorldDirection(_w).negate();
+    const style = hit ? (hit.kind === 'punch' && !hit.finisher && Math.random() < 0.5 ? 'crumple' : Knockdown.pickStyle(hit, 0)) : 'back';
+    this.kd.start(dir, 1.1, { lie: 1.6, size: this.scale, style, health: 0 });
     this.knock.set(0, 0, 0);
     this.enter('down', 0);
     this.fistGlow.material.opacity = 0;
@@ -226,18 +267,25 @@ export class Sparring {
     // Slow health recovery between exchanges.
     if (this.state !== 'down') this.health = Math.min(this.maxHealth, this.health + dt * 2);
 
-    const guardL = _w.set(0.17, 1.42, 0.3);
-    const guardR = new THREE.Vector3(-0.14, 1.36, 0.34);
+    // Health shows in the stance: guard up high and chest out when fresh,
+    // hunched over with the guard sagging when beaten up.
+    const hp = clamp(this.health / this.maxHealth, 0, 1);
+    const hurt = 1 - hp;
+    const now = performance.now() * 0.001;
+    const guardL = _w.set(0.17 + 0.04 * hurt, 1.42 - 0.36 * hurt * hurt, 0.3 - 0.02 * hurt);
+    const guardR = new THREE.Vector3(-0.14 - 0.06 * hurt, 1.36 - 0.42 * hurt * hurt, 0.34 - 0.06 * hurt);
     const a = this.avatar;
-    const pose = (l, r) => {
+    const pose = (l, r, slump = hp) => {
       a.clearPowerUp();
+      a.stance?.(slump, now);
       a.arms.left.target.lerp(l, Math.min(1, dt * 14));
       a.arms.right.target.lerp(r, Math.min(1, dt * 14));
-      a.head.quaternion.identity();
+      a.head.quaternion.setFromAxisAngle(_X, 0.28 * (1 - slump) * (1 - slump) - 0.12 * Math.max(0, slump - 0.7) / 0.3);
       a.poseArms();
     };
     const breathe = Math.sin(performance.now() * 0.004) * 0.015;
     a.root.rotation.x = 0;
+    a.root.rotation.y = 0;
     switch (this.state) {
       case 'powerUp': {
         // Opens each round Dragon Ball style: crouch, clench, yell, aura flares.
@@ -300,6 +348,19 @@ export class Sparring {
         }
         break;
       }
+      case 'stunned': {
+        // Out on their feet: arms hanging, head lolling, swaying and stumbling.
+        const st = now * 2.6;
+        pose(new THREE.Vector3(0.24, 0.92 + Math.sin(st) * 0.03, 0.12), new THREE.Vector3(-0.24, 0.9 + Math.cos(st) * 0.03, 0.1), Math.min(hp, 0.15));
+        a.head.quaternion.setFromEuler(new THREE.Euler(0.35 + Math.sin(st * 1.3) * 0.15, Math.sin(st) * 0.3, Math.cos(st * 0.8) * 0.2));
+        a.poseHead?.();
+        a.root.rotation.x = 0.1 + Math.sin(st * 0.9) * 0.08;
+        a.root.rotation.y = Math.sin(st * 0.7) * 0.25;
+        pos.addScaledVector(_w.set(Math.sin(st * 0.5), 0, Math.cos(st * 0.6)), 0.25 * dt);
+        this.fistGlow.material.opacity = 0;
+        if (this.timer <= 0) { this.cooldown = Math.max(this.cooldown, 0.6); this.enter('recover', 0.3); }
+        break;
+      }
       case 'block': {
         pose(new THREE.Vector3(0.1, 1.62, 0.25), new THREE.Vector3(-0.1, 1.62, 0.25));
         if (this.timer <= 0) this.enter('idle', 0.2);
@@ -343,6 +404,10 @@ export class Sparring {
       this.wobble = Math.max(0, this.wobble - dt * 5);
       a.root.rotation.z = Math.sin(this.wobble * 9) * 0.06 * this.wobble;
     } else a.root.rotation.z = 0;
+    this.dizzy.update(dt, this.state === 'stunned', 2.05 * this.scale, 0.26 * this.scale);
+    this.drawBar();
+    this.bar.position.set(0, 2.2 * this.scale, 0);
+    this.bar.visible = !this.kd.grounded && this.state !== 'down';
     if (this.powerFx) this.powerFx.update(dt, this.group.position, this.state === 'powerUp' ? 0.8 * g.visualIntensity : 0, this.shadow ? 0x9a6aff : 0xdcc9a8);
     const r = Math.hypot(pos.x, pos.z);
     if (r > 25) { pos.x *= 25 / r; pos.z *= 25 / r; }
@@ -361,6 +426,7 @@ export class Sparring {
     a.head.quaternion.identity();
     a.poseArms();
     a.root.rotation.x = kd.tilt;
+    a.root.rotation.y = kd.yaw;
     a.root.position.y = kd.lift(0.12);
   }
 

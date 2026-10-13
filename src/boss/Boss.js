@@ -6,6 +6,8 @@ import { Aura } from '../fx/Aura.js';
 import { BattleDamage } from '../fx/BattleDamage.js';
 import { BOSSES, bossById } from './bosses.js';
 import { Knockdown } from '../combat/Knockdown.js';
+import { Dizzy } from '../fx/Dizzy.js';
+import { healthColor } from '../ui/Panel.js';
 
 export { BOSSES };
 
@@ -43,6 +45,8 @@ export class Boss {
     // of whatever pose the current state sets.
     this.flinch = { x: 0, z: 0, vx: 0, vz: 0, ax: 0, az: 0 };
     this.dodgeCd = 0;
+    this.stance = { lean: 0, head: 0 }; // additive health posture (applied like the flinch)
+    this.dizzy = new Dizzy(this.group);
     this.target = {
       id: 'boss', team: 'enemy',
       active: () => this.active && this.state !== 'intro' && this.state !== 'defeated' && this.state !== 'vanish',
@@ -362,7 +366,14 @@ export class Boss {
       // A finished combo or a Spirit Bomb always does; charged blasts and big
       // punches do more often the stronger you are.
       const chance = hit.sphere || hit.finisher ? 1 : clamp(0.45 + 0.3 * Math.log10(ratio * 2), 0.3, 0.9);
-      if (heavy && Math.random() < chance) this.knockDown(hit.dir, hit.sphere ? 1.4 : hit.finisher ? 1 : 0.8);
+      if (heavy && Math.random() < chance) this.knockDown(hit, hit.sphere ? 1.4 : hit.finisher ? 1 : 0.8);
+    }
+    // A hard blow (relative to their health) leaves them stunned: dazed,
+    // swaying, arms hanging, seeing stars. Bigger hits stun longer.
+    if (this.health > 0 && this.state !== 'knockdown' && !this.kd.active && !['intro', 'roar', 'vanish', 'appear'].includes(this.state)) {
+      const stun = clamp((dmg / this.def.maxHealth) * 14 + (hit.charged ? 0.25 : 0) + (hit.energy || 0) * 0.15 - 0.35, 0, 2.4);
+      if (this.state === 'stunned') this.timer = Math.min(this.timer + stun * 0.25, 2.4);
+      else if (stun > 0.45) { this.endAttackVisuals(); this.enter('stunned', stun); if (stun > 1.4) g.audio.targetHit?.(0.4); }
     }
     const next = this.def.phases[this.phase];
     if (next && this.health < this.def.maxHealth * next.at && this.health > 0 && !this.kd.active) this.powerUpPhase(next);
@@ -377,11 +388,12 @@ export class Boss {
     this.flinch.vz -= _w.x * 4 * k / S;
   }
 
-  knockDown(dir, power) {
+  knockDown(hit, power) {
     const g = this.game;
     this.endAttackVisuals();
     this.knock.set(0, 0, 0);
-    this.kd.start(dir, power, { lie: 0.7, size: this.def.scale / 1.18 });
+    const hp = this.health / this.def.maxHealth;
+    this.kd.start(hit.dir, power, { lie: 0.7, size: this.def.scale / 1.18, style: Knockdown.pickStyle(hit, hp), health: hp });
     this.enter('knockdown', 0);
     g.effects.impact(this.chest.clone(), 0xffffff, 1.2);
     g.audio.punch(1, true);
@@ -423,7 +435,7 @@ export class Boss {
     this.endAttackVisuals();
     this.knock.set(0, 0, 0);
     // The final blow sends them flying; they don't get up.
-    this.kd.start(hit?.dir || _v.set(-Math.sin(this.group.rotation.y), 0, -Math.cos(this.group.rotation.y)), 1.3, { lie: 99, size: this.def.scale / 1.18 });
+    this.kd.start(hit?.dir || _v.set(-Math.sin(this.group.rotation.y), 0, -Math.cos(this.group.rotation.y)), 1.3, { lie: 99, size: this.def.scale / 1.18, style: hit ? Knockdown.pickStyle(hit, 0) : 'crumple', health: 0 });
     this.enter('defeated', 3.5);
     this.say(this.powerRatio() > 2 ? this.def.lines.loseStrong : this.def.lines.lose, '#ffb0b0');
     g.combat.clearProjectiles('enemy');
@@ -469,6 +481,10 @@ export class Boss {
     const fl = this.flinch;
     this.body.rotation.x -= fl.ax;
     this.body.rotation.z -= fl.az;
+    this.head.rotation.x -= this.stance.head;
+    this.body.rotation.y = 0;
+    const hp = this.health / this.def.maxHealth;
+    const hurt = 1 - hp;
 
     if (!['defeated', 'rush', 'vanish', 'knockdown'].includes(this.state)) {
       const want = Math.atan2(head.x - pos.x, head.z - pos.z);
@@ -485,8 +501,9 @@ export class Boss {
     const arms = this.arms;
     const restArms = (k = 1) => {
       for (const a of [arms.left, arms.right]) {
-        a.shoulder.rotation.x = damp(a.shoulder.rotation.x, -0.3, 8 * k, dt);
-        a.elbow.rotation.x = damp(a.elbow.rotation.x, -1.2, 8 * k, dt);
+        // The guard drops as they get beaten down.
+        a.shoulder.rotation.x = damp(a.shoulder.rotation.x, -0.3 + 0.28 * hurt, 8 * k, dt);
+        a.elbow.rotation.x = damp(a.elbow.rotation.x, -1.2 + 0.7 * hurt * hurt, 8 * k, dt);
         a.shoulder.rotation.z = damp(a.shoulder.rotation.z, 0, 8 * k, dt);
       }
     };
@@ -791,6 +808,7 @@ export class Boss {
         const kd = this.kd;
         kd.update(dt, pos);
         this.body.rotation.x = kd.tilt;
+        this.body.rotation.y = kd.yaw;
         this.body.position.y = kd.lift(0.2 * this.def.scale);
         const flail = kd.phase === 'getUp' ? 0 : 1;
         arms.left.shoulder.rotation.z = damp(arms.left.shoulder.rotation.z, 1.2 * flail, 8, dt);
@@ -807,6 +825,30 @@ export class Boss {
           const next = this.def.phases[this.phase];
           if (next && this.health < this.def.maxHealth * next.at) this.powerUpPhase(next);
           else this.enter('idle', 0.3);
+        }
+        break;
+      }
+      // -- Stunned: dazed and swaying, arms hanging, stars circling.
+      case 'stunned': {
+        const t = performance.now() * 0.001;
+        for (const [a, sg] of [[arms.left, 1], [arms.right, -1]]) {
+          a.shoulder.rotation.x = damp(a.shoulder.rotation.x, 0.1, 6, dt);
+          a.elbow.rotation.x = damp(a.elbow.rotation.x, -0.25, 6, dt);
+          a.shoulder.rotation.z = damp(a.shoulder.rotation.z, 0.12 * sg + Math.sin(t * 3 + sg) * 0.08, 6, dt);
+          a.glow.material.opacity = 0;
+        }
+        this.body.rotation.x = damp(this.body.rotation.x, 0.2 + Math.sin(t * 2.6) * 0.08, 6, dt);
+        this.body.rotation.z = Math.sin(t * 3.4) * 0.14;
+        this.head.rotation.z = Math.sin(t * 2.9 + 1) * 0.3;
+        this.body.position.y = -0.04 * S + Math.abs(Math.sin(t * 3.4)) * 0.02;
+        // Stumbles a little in circles.
+        pos.x += Math.cos(t * 1.7) * dt * 0.35;
+        pos.z += Math.sin(t * 1.7) * dt * 0.35;
+        if (this.timer <= 0) {
+          this.body.rotation.x = this.body.rotation.z = this.head.rotation.z = 0;
+          this.body.position.y = 0;
+          this.cooldown = Math.max(this.cooldown, 0.5);
+          this.enter('idle', 0.2);
         }
         break;
       }
@@ -835,6 +877,7 @@ export class Boss {
       case 'defeated': {
         this.kd.update(dt, pos);
         this.body.rotation.x = this.kd.tilt;
+        this.body.rotation.y = this.kd.yaw;
         this.body.position.y = this.kd.lift(0.2 * this.def.scale);
         if (this.timer < 1.2) this.group.scale.setScalar(Math.max(0.01, this.timer / 1.2));
         if (Math.random() < 0.3) g.effects.stream(pos.clone().add(new THREE.Vector3(rand(-0.5, 0.5), rand(0.5, 1.8), rand(-0.5, 0.5))), 0xffcc33, { vy: 2, size: 0.08 });
@@ -849,10 +892,17 @@ export class Boss {
     fl.vz += (-140 * fl.z - 13 * fl.vz) * dt;
     fl.x += fl.vx * dt;
     fl.z += fl.vz * dt;
-    fl.ax = this.state === 'knockdown' || this.state === 'defeated' ? 0 : clamp(fl.x, -0.6, 0.6);
-    fl.az = this.state === 'knockdown' || this.state === 'defeated' ? 0 : clamp(fl.z, -0.4, 0.4);
+    // Health shows in the stance: chest out and chin up when fresh, hunched
+    // over, head hanging and breathing hard when beaten up.
+    const down = this.state === 'knockdown' || this.state === 'defeated';
+    const posture = down || this.state === 'stunned' ? 0 : Math.pow(hurt, 1.3) * 0.42 - Math.max(0, hp - 0.7) * 0.3 + Math.sin(performance.now() * 0.006) * 0.035 * hurt;
+    fl.ax = down ? 0 : clamp(fl.x, -0.6, 0.6) + posture;
+    fl.az = down ? 0 : clamp(fl.z, -0.4, 0.4);
     this.body.rotation.x += fl.ax;
     this.body.rotation.z += fl.az;
+    this.stance.head = down ? 0 : hurt * 0.4 - Math.max(0, hp - 0.7) * 0.35;
+    this.head.rotation.x += this.stance.head;
+    this.dizzy.update(dt, this.state === 'stunned', 2.12 * this.body.scale.y, 0.28 * this.body.scale.y);
     if (this.barrier.visible && this.state !== 'barrierUp') {
       this.barrierTime -= dt;
       if (this.barrierTime <= 0) this.barrier.visible = false;
@@ -1011,8 +1061,10 @@ export class Boss {
     c.fillStyle = 'rgba(0,0,0,0.6)';
     c.fillRect(16, 50, 480, 34);
     const f = this.health / this.def.maxHealth;
-    c.fillStyle = ['#ff4a4a', '#c02aff', '#ff1a6a'][Math.min(2, this.phase)];
+    c.fillStyle = healthColor(f);
     c.fillRect(20, 54, 472 * f, 26);
+    c.fillStyle = 'rgba(255,255,255,0.25)';
+    c.fillRect(20, 54, 472 * f, 8);
     this.barTex.needsUpdate = true;
   }
 }

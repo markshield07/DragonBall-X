@@ -103,7 +103,7 @@ export class Combat {
     this.beamTip.scale.setScalar(r * (hitT && reach >= len ? 7 : 3));
     if (Math.random() < 0.8) this.fx.stream(o, b.color, { vy: 0, spread: r * 0.8, size: r * 0.6, life: 0.2 });
     // Where it lands, the beam keeps blowing up: rolling explosions, rocks
-    // and a crater that grows while it digs in.
+    // and a gouge burnt along the line of the beam.
     b.boom -= dt;
     if ((hitT || ground) && reach >= len) {
       const point = _b.copy(o).addScaledVector(d, len);
@@ -111,8 +111,9 @@ export class Combat {
       b.impact.copy(point);
       if (b.boom <= 0) {
         b.boom = 0.2;
-        this.fx.explosion(point, b.color, b.energy * 0.38);
-        if (ground) this.fx.crater(point, 0.8 + 0.4 * b.energy * Math.min(1, b.t / b.duration + 0.3));
+        // Rolling blasts burn and plough the ground along the beam; only the
+        // finale of a big beam digs a crater.
+        this.fx.explosion(point, b.color, b.energy * 0.38, d);
       }
     }
     b.tick -= dt;
@@ -132,7 +133,7 @@ export class Combat {
     // The finale: one huge explosion where the beam was landing (or at its tip in the air).
     if (b) {
       const at = b.impact || _b.copy(b.o).addScaledVector(b.d, Math.min(45, b.t * 60));
-      this.fx.explosion(at, b.color, b.energy);
+      this.fx.explosion(at, b.color, b.energy, b.d);
       this.fx.flash(at, 0xffffff, 2 + b.energy * 2, 0.35);
       bus.emit('projectile:explode', { position: at.clone(), charged: true, team: b.team, kind: 'beam', energy: b.energy });
     }
@@ -283,7 +284,7 @@ export class Combat {
 
   explode(p) {
     const energy = Explosions.energyOf(p);
-    this.fx.explosion(p.mesh.position, p.color, energy);
+    this.fx.explosion(p.mesh.position, p.color, energy, p.vel);
     this.fx.flash(p.mesh.position, p.color, p.radius * 4 + energy * 0.8, 0.18 + 0.06 * energy);
     if (p.kind === 'sphere') this.fx.ring(p.mesh.position.clone(), p.color, { maxRadius: 6 * p.radius + 2, duration: 0.7 });
     bus.emit('projectile:explode', { position: p.mesh.position.clone(), charged: p.charged, team: p.team, kind: p.kind, energy });

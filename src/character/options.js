@@ -82,6 +82,16 @@ export const SCARS = [
   { id: 'cross', name: 'Cross Scar' },
 ];
 
+// Face accessory: a scouter over the left eye, by lens color.
+export const SCOUTERS = [
+  { id: 'none', name: 'None' },
+  { id: 'green', name: 'Green Scouter', color: 0x3fe06a },
+  { id: 'red', name: 'Red Scouter', color: 0xff3a3a },
+  { id: 'blue', name: 'Blue Scouter', color: 0x3aa8ff },
+  { id: 'purple', name: 'Purple Scouter', color: 0xb05aff },
+  { id: 'orange', name: 'Orange Scouter', color: 0xff9a1a },
+];
+export const scouterOf = (c) => SCOUTERS.find((s) => s.id === c.scouter && s.color);
 export const EXPRESSIONS = [
   { id: 'fierce', name: 'Fierce' }, // narrowed, intense eyes (Rokan)
   { id: 'focused', name: 'Focused' },
@@ -164,6 +174,7 @@ export function defaultCharacter() {
     eyeColor: 7, // Steel blue-grey
     brows: 'fierce',
     scar: 'none',
+    scouter: 'none',
     expression: 'fierce',
     outfit: 'primal',
     armorColor: 0, // Crimson pants, waist flap and wrist cuffs

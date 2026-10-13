@@ -17,9 +17,16 @@ export const xpToNext = (level) => 40 + 15 * level;
 
 // Base Power Level grows ~18% per stat level gained. Starting (all level 1) = 1,000.
 // SSJ1 unlocks at 5,000 which is ~10 combined level-ups (~5-10 minutes of mixed training).
-export const basePowerLevelFor = (levelSum) => Math.round(1000 * Math.pow(1.18, levelSum - 4));
+// Past ~120,000 (where the last unlocks are) each level adds a steady ~4,800
+// instead, so a long-trained character doesn't run off into the billions.
+const PL_KNEE = 29;
+export const basePowerLevelFor = (levelSum) => {
+  const n = levelSum - 4;
+  const pl = n <= PL_KNEE ? 1000 * Math.pow(1.18, n) : 1000 * Math.pow(1.18, PL_KNEE) * (1 + 0.04 * (n - PL_KNEE));
+  return Math.round(pl / 10) * 10;
+};
 
-export const POWER_MILESTONES = [2000, 3000, 5000, 7500, 10000, 15000, 25000, 50000, 100000];
+export const POWER_MILESTONES = [2000, 3000, 5000, 7500, 10000, 15000, 25000, 50000, 100000, 250000, 500000];
 
 // Gravity chamber levels. Each unlocks at a base Power Level or a boss
 // victory. `recommended`: below this base Power Level the gravity strains

@@ -2,8 +2,9 @@ import * as THREE from 'three';
 import { bus } from '../core/events.js';
 import { FORMS } from '../progression/forms.js';
 import { formatNumber } from '../core/math.js';
-import { roundRect, COLORS } from './Panel.js';
+import { roundRect, COLORS, healthColor } from './Panel.js';
 import { BOSSES } from '../boss/bosses.js';
+import { Portrait } from './Portrait.js';
 
 // Status HUD drawn on one canvas. On desktop the canvas itself is shown as a
 // DOM overlay; in VR the same canvas is a texture on a wrist display above
@@ -27,6 +28,7 @@ export class HUD {
     this.timer = 0;
     this.message = null;
     this.displayPL = 1000;
+    this.portrait = new Portrait(game);
     bus.on('hud:message', (m) => this.showMessage(m.text, m.color, m.duration));
   }
 
@@ -99,11 +101,27 @@ export class HUD {
       if (label) text(label, x + 12, y + h - 8, h - 10, '#ffffff', 'left');
     };
 
+    // Selfie portrait of your fighter in their current form.
+    const pic = this.portrait.update();
+    const px = 22, py = 18, ps = 142;
+    const auraCol = '#' + f.aura.color.toString(16).padStart(6, '0');
+    if (pic) {
+      g.save();
+      roundRect(g, px, py, ps, ps, 18);
+      g.clip();
+      g.drawImage(pic, px, py, ps, ps);
+      g.restore();
+    }
+    roundRect(g, px, py, ps, ps, 18);
+    g.lineWidth = 5;
+    g.strokeStyle = p.form === 'base' ? 'rgba(255,255,255,0.5)' : auraCol;
+    g.stroke();
     // Header: name + form
-    text(game.character.name.toUpperCase(), 28, 52, 36, COLORS.text);
+    const tx = px + ps + 18;
+    text(game.character.name.toUpperCase(), tx, 52, 36, COLORS.text);
     text(f.name.toUpperCase(), W - 28, 52, 34, p.form === 'base' ? COLORS.muted : COLORS.gold, 'right');
     // Power level
-    text('POWER LEVEL', 28, 100, 24, COLORS.muted);
+    text('POWER LEVEL', tx, 100, 24, COLORS.muted);
     // Status badges: flying, slow motion, Kaio-ken, gravity, Time Chamber
     const badges = [];
     if (p.flying) badges.push(['FLYING', '#bfe6ff']);
@@ -112,9 +130,9 @@ export class HUD {
     if (game.state === 'training' && game.training.gravity > 1) badges.push([`${game.training.gravity}x G`, '#ff6a6a']);
     if (game.state === 'training' && game.training.inChamber) badges.push([`DAY ${game.training.chamberDays()}`, '#ffffff']);
     badges.slice(0, 3).forEach(([s, c], i) => text(s, W - 28, 100 + i * 30, 24, c, 'right'));
-    text(formatNumber(this.displayPL), 28, 150, 54, p.form === 'base' ? '#ffffff' : COLORS.gold);
+    text(formatNumber(this.displayPL), tx, 150, 54, p.form === 'base' ? '#ffffff' : COLORS.gold);
     // Resources
-    bar(28, 172, 712, 34, p.health / prog.maxHealth(), '#4cdd6a', `HP ${Math.ceil(p.health)}`);
+    bar(28, 172, 712, 34, p.health / prog.maxHealth(), healthColor(p.health / prog.maxHealth()), `HP ${Math.ceil(p.health)}`);
     bar(28, 214, 712, 34, p.ki / prog.maxKi(), '#4cc3ff', `KI ${Math.floor(p.ki)}`);
     bar(28, 256, 712, 26, p.stamina / prog.maxStamina(), p.exhausted ? '#ff6a4d' : '#ffd23a', p.exhausted ? 'EXHAUSTED' : 'STAMINA');
 

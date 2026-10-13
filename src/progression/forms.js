@@ -6,7 +6,9 @@
 // unlock: { powerLevel, boss } unlocks the form when the base Power Level
 // reaches `powerLevel` OR the named boss is defeated (whichever comes first).
 //
-// plMultiplier: multiplies the displayed Power Level (the big, satisfying number).
+// plMultiplier: multiplies your Power Level while in the form. Kept to
+// simple, readable steps (x2 up to x10) so numbers stay in the thousands
+// to low millions instead of running off into the billions.
 // damage/speed/kiDamage: real combat multipliers (kept modest for balance).
 // kiDrain: ki per second while sustaining the form (before mastery reductions).
 export const FORMS = {
@@ -31,7 +33,7 @@ export const FORMS = {
     id: 'ssj1',
     name: 'Super Saiyan',
     playable: true,
-    plMultiplier: 50,
+    plMultiplier: 2,
     damage: 1.8,
     kiDamage: 1.7,
     speed: 1.3,
@@ -48,7 +50,7 @@ export const FORMS = {
     id: 'ssj2',
     name: 'Super Saiyan 2',
     playable: true,
-    plMultiplier: 100,
+    plMultiplier: 3,
     damage: 2.4,
     kiDamage: 2.3,
     speed: 1.5,
@@ -65,7 +67,7 @@ export const FORMS = {
     id: 'ssj3',
     name: 'Super Saiyan 3',
     playable: true,
-    plMultiplier: 400,
+    plMultiplier: 4,
     damage: 3.2,
     kiDamage: 3.2,
     speed: 1.6,
@@ -82,7 +84,7 @@ export const FORMS = {
     id: 'ssj4',
     name: 'Super Saiyan 4',
     playable: true,
-    plMultiplier: 4000,
+    plMultiplier: 6,
     damage: 4.2,
     kiDamage: 3.6,
     speed: 1.8,
@@ -100,7 +102,7 @@ export const FORMS = {
     id: 'ssj5',
     name: 'Super Saiyan 5',
     playable: true,
-    plMultiplier: 20000,
+    plMultiplier: 10,
     damage: 5.5,
     kiDamage: 5.5,
     speed: 2,

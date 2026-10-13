@@ -7,7 +7,7 @@ import { SLOWMO_UNLOCK_LEVEL } from '../player/SpeedFocus.js';
 import { BOSSES } from '../boss/bosses.js';
 import { GRAPHICS_PRESETS } from '../settings/Settings.js';
 import {
-  SKIN_TONES, HAIR_STYLES, HAIR_COLORS, EYE_COLORS, BODY_TYPES, BUILDS, BROWS, SCARS, EXPRESSIONS,
+  SKIN_TONES, HAIR_STYLES, HAIR_COLORS, EYE_COLORS, BODY_TYPES, BUILDS, BROWS, SCARS, SCOUTERS, EXPRESSIONS,
   OUTFITS, OUTFIT_PALETTE, OUTFIT_SECTIONS, CHARACTER_TEMPLATES, applyCharacterTemplate, randomName, defaultCharacter,
 } from '../character/options.js';
 import { formatNumber } from '../core/math.js';
@@ -134,6 +134,7 @@ export class CharacterCreator {
       arrowRow('expr', 'Expression', EXPRESSIONS, 'expression');
       arrowRow('brows', 'Brows', BROWS, 'brows');
       arrowRow('scar', 'Scars', SCARS, 'scar');
+      arrowRow('scouter', 'Scouter', SCOUTERS, 'scouter');
     } else if (this.tab === 'hair') {
       arrowRow('hair', 'Hairstyle', HAIR_STYLES, 'hairStyle');
       swatchRow('hairc', 'Hair color', HAIR_COLORS, 'hairColor');

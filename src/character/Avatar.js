@@ -4,7 +4,8 @@ const _PX = new THREE.Vector3(1, 0, 0);
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { toonUnique, addOutline, outlineExtrudeMaterial } from '../render/toon.js';
 import { buildHairGeometry, HEAD_RADIUS } from './hair.js';
-import { SKIN_TONES, HAIR_COLORS, EYE_COLORS, paletteColor, buildOf } from './options.js';
+import { SKIN_TONES, HAIR_COLORS, EYE_COLORS, paletteColor, buildOf, scouterOf } from './options.js';
+import { buildScouter } from './Scouter.js';
 import { FORMS } from '../progression/forms.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { torsoBand, torsoShell, torsoPoint, bulge, neck, thigh, calf, upperArm, forearm, partBasis } from './anatomy.js';
@@ -474,6 +475,18 @@ export class Avatar {
       a.knuckle.material = gloved ? this.mats.skin : this.mats.gloves;
     }
     this.rebuildFace();
+    // Scouter over the left eye (+X is the avatar's left).
+    const sc = scouterOf(c);
+    if ((sc?.id || '') !== this.scouterId) {
+      this.scouterId = sc?.id || '';
+      if (this.scouter) { this.head.remove(this.scouter); this.scouter = null; }
+      if (sc) {
+        const R = HEAD_RADIUS;
+        this.scouter = buildScouter(sc.color, new THREE.Vector3(0.043, 0.004, R * 0.97), new THREE.Vector3(R * 0.93, -0.005, -0.005));
+        this.scouter.traverse((o) => { o.userData.noWounds = true; });
+        this.head.add(this.scouter);
+      }
+    }
     this.bodyKey = '';
     this.setForm(this.formId);
   }

@@ -11,6 +11,7 @@ import { Hands } from '../player/Hands.js';
 import { Player } from '../player/Player.js';
 import { Comfort } from '../player/Comfort.js';
 import { Combat } from '../combat/Combat.js';
+import { Aim } from '../combat/Aim.js';
 import { Effects } from '../fx/Effects.js';
 import { Aura } from '../fx/Aura.js';
 import { Progression, STAT_LABELS } from '../progression/Progression.js';
@@ -54,6 +55,7 @@ export class Game {
     this.arena = new Arena(this.renderer.scene);
     this.world = new World(this);
     this.combat = new Combat(this.renderer.scene, this.effects);
+    this.aim = new Aim(this);
     this.xrInput = new XRInput(this.renderer.renderer, this.renderer.rig);
     this.desktopInput = new DesktopInput(this.renderer.canvas, this.renderer.camera);
     this.hands = new Hands(this.renderer.rig);
@@ -728,6 +730,8 @@ export class Game {
 
     const active = this.gameplayActive;
     const paused = this.menuOpen && (this.state === 'boss');
+    // Point each hand's shots at what its reticle is on (locks onto enemies).
+    this.aim.update(input, xr, active && this.player.alive);
     this.lastInput = input;
     if (active) {
       if (input.hands.right.secondaryDown) this.player.cycleAttack();

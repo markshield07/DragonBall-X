@@ -3,7 +3,8 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { toonUnique, outlineExtrudeMaterial } from '../render/toon.js';
 import { FORMS } from '../progression/forms.js';
-import { SKIN_TONES, HAIR_COLORS, EYE_COLORS, CHARACTER_TEMPLATES, BUILDS, paletteColor, buildOf } from './options.js';
+import { SKIN_TONES, HAIR_COLORS, EYE_COLORS, CHARACTER_TEMPLATES, BUILDS, paletteColor, buildOf, scouterOf } from './options.js';
+import { buildScouter } from './Scouter.js';
 
 // Modeled, rigged characters loaded from GLB files (public/models/characters).
 // A ModelAvatar has the same public interface as the procedural Avatar
@@ -362,7 +363,38 @@ export class ModelAvatar {
     this.body.position.set(Math.sin(t * 73) * 0.006 * k, -0.07 * k * sc + Math.abs(Math.sin(t * 37)) * 0.004 * k, Math.cos(t * 59) * 0.005 * k);
   }
 
+  // Fighting stance that shows health. hp 0..1: fresh fighters stand tall,
+  // chest out, chin up; badly hurt ones hunch over the gut on bent, shaky
+  // knees with the head hanging. Call before poseArms (the arms follow the
+  // bent spine). Cleared by clearPowerUp.
+  stance(hp, t = 0) {
+    if (!this.ready) return;
+    const b = this.bones;
+    for (const n of POWER_BONES) if (b[n]) b[n].quaternion.copy(this.rest.get(b[n]));
+    this.model.updateMatrixWorld(true);
+    const hurt = 1 - Math.max(0, Math.min(1, hp));
+    const proud = Math.max(0, hp - 0.7) / 0.3;
+    const sway = Math.sin(t * 2.3) * 0.05 * hurt * hurt;
+    const lean = Math.pow(hurt, 1.2) * 0.62 - proud * 0.16 + Math.sin(t * 3.1) * 0.03 * hurt;
+    if (b.spine_02) this.rotateRel(b.spine_02, _pq.setFromEuler(_eu.set(lean, sway, sway * 0.8)));
+    const knee = 0.12 + 0.4 * hurt;
+    for (const s of ['l', 'r']) {
+      const sgn = s === 'l' ? 1 : -1;
+      const wob = Math.sin(t * 7 + sgn) * 0.04 * hurt * hurt;
+      if (b[`thigh_${s}`]) this.rotateRel(b[`thigh_${s}`], _pq.setFromEuler(_eu.set(-knee * 0.55 + wob, 0, 0.04 * sgn)));
+      if (b[`calf_${s}`]) this.rotateRel(b[`calf_${s}`], _pq.setFromAxisAngle(_X, knee));
+      if (b[`foot_${s}`]) this.rotateRel(b[`foot_${s}`], _pq.setFromEuler(_eu.set(-knee * 0.45, 0, -0.04 * sgn)));
+    }
+    this.body.position.set(0, -(0.008 + 0.05 * hurt) * this.body.scale.x, 0);
+    this.stanced = true;
+  }
+
   clearPowerUp() {
+    if (this.stanced) {
+      this.stanced = false;
+      this.body.position.set(0, 0, 0);
+      if (this.ready) for (const n of POWER_BONES) if (this.bones[n]) this.bones[n].quaternion.copy(this.rest.get(this.bones[n]));
+    }
     if (!this.power) return;
     this.power = 0;
     this.body.position.set(0, 0, 0);
@@ -388,7 +420,35 @@ export class ModelAvatar {
     set('Highlight', 0xffffff);
     set('Brow', 0x0d0b0a);
     set('Lash', 0x0d0b0a);
+    this.updateScouter();
     this.setForm(this.formId);
+  }
+
+  // Scouter on the head bone, fitted to where this model's eyes are.
+  updateScouter() {
+    const sc = scouterOf(this.character);
+    if ((sc?.id || '') === this.scouterId) return;
+    this.scouterId = sc?.id || '';
+    if (this.scouter) { this.scouter.parent?.remove(this.scouter); this.scouter = null; }
+    const head = this.bones?.head;
+    const eyes = this.parts.EyeWhite;
+    if (!sc || !head || !eyes?.length) return;
+    // Measure the eyes in the rest pose, in avatar space.
+    const saved = [];
+    this.model.traverse((o) => { if (o.isBone) { saved.push([o, o.quaternion.clone()]); o.quaternion.copy(this.rest.get(o)); } });
+    this.root.updateMatrixWorld(true);
+    const box = new THREE.Box3();
+    for (const m of eyes) { m.boundingBox = null; box.expandByObject(m); }
+    box.applyMatrix4(_m.copy(this.root.matrixWorld).invert());
+    const c = box.getCenter(new THREE.Vector3());
+    const k = (box.max.x - box.min.x) / 0.14; // eye span relative to an average head
+    const g = buildScouter(sc.color, new THREE.Vector3(c.x + 0.043 * k, c.y, c.z), new THREE.Vector3(c.x + 0.105 * k, c.y - 0.01 * k, c.z - 0.115 * k), k);
+    g.traverse((o) => { o.userData.noWounds = true; });
+    this.root.add(g);
+    head.attach(g);
+    for (const [o, q] of saved) o.quaternion.copy(q);
+    this.root.updateMatrixWorld(true);
+    this.scouter = g;
   }
 
   setForm(formId) {
