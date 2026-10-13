@@ -114,6 +114,10 @@ export class Transformation {
     const can = this.canTransform();
     if (can.ok) {
       this.begin(can.form.id);
+    } else if (p.form !== 'base') {
+      // Still powering up (desktop players keep Space held) but can't go any
+      // higher: A powers down, as it does when not charging.
+      this.powerDown();
     } else if (can.reason === 'locked') {
       const f = can.form || FORMS.ssj1;
       bus.emit('hud:message', { text: f.unlock ? `Locked: ${f.unlock.label}` : 'Not available yet', color: '#ff9a4d' });
@@ -122,7 +126,7 @@ export class Transformation {
     } else if (can.reason === 'ki') {
       bus.emit('hud:message', { text: 'Not enough ki to transform', color: '#ff9a4d' });
     } else if (can.reason === 'max') {
-      bus.emit('hud:message', { text: 'This is your highest form. Press A (T) to power down.', color: '#ffd24d' });
+      bus.emit('hud:message', { text: 'This is your highest form.', color: '#ffd24d' });
     }
   }
 
@@ -191,6 +195,9 @@ export class Transformation {
 
   powerDown() {
     if (this.player.form === 'base') return;
+    if (this.state === 'charging') bus.emit('powerup:end', {});
+    this.charge = 0;
+    this.prompted = false;
     this.state = 'poweringDown';
     this.powerDownTime = 0;
     this.game.audio.powerDown();
