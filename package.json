@@ -1,0 +1,22 @@
+{
+  "name": "dragonball-x",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Dragon Ball X - anime-style WebXR Saiyan training and fighting game (Phase 1 prototype)",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:https": "vite --mode https",
+    "build": "vite build",
+    "preview": "vite preview",
+    "preview:https": "vite preview --mode https"
+  },
+  "dependencies": {
+    "three": "0.180.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-basic-ssl": "2.1.0",
+    "iwer": "2.1.1",
+    "vite": "7.3.7"
+  }
+}
