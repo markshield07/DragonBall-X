@@ -9,6 +9,19 @@ import { sceneryRaycast } from '../world/Destruction.js';
 const _a = new THREE.Vector3();
 const _b = new THREE.Vector3();
 const _d = new THREE.Vector3();
+const DISC_CORE = new THREE.CylinderGeometry(0.72, 0.72, 0.05, 28);
+const DISC_SHELL = new THREE.CylinderGeometry(1, 1, 0.09, 28);
+const SPIRAL_LEN = 50; // metres of Special Beam Cannon spiral, trimmed to the beam
+const SPIRAL_SEGS = 900;
+
+// A Destructo Disc: a thin white-hot disc in a glowing rim, lying flat.
+export function makeDisc(color) {
+  const g = new THREE.Group();
+  const core = new THREE.Mesh(DISC_CORE, new THREE.MeshBasicMaterial({ color: 0xffffff }));
+  const shell = new THREE.Mesh(DISC_SHELL, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false }));
+  g.add(core, shell);
+  return g;
+}
 
 // Combat & collisions: target registry, punch contact tests, pooled ki
 // projectiles (player and enemy), and damage formulas.
@@ -37,6 +50,14 @@ export class Combat {
     for (const m of [this.beamOuter, this.beamMid, this.beamCore]) { m.frustumCulled = false; m.renderOrder = 7; this.beamGroup.add(m); }
     this.beamTip = new THREE.Sprite(new THREE.SpriteMaterial({ map: softCircleTexture(), color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
     this.beamTip.renderOrder = 8;
+    // Special Beam Cannon: a spiral wound around the beam.
+    const pts = [];
+    for (let i = 0; i <= 400; i++) { const z = (i / 400) * SPIRAL_LEN; const a = z * (Math.PI * 2 / 0.9); pts.push(new THREE.Vector3(Math.cos(a), Math.sin(a), z)); }
+    const helix = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), SPIRAL_SEGS, 0.14, 5, false);
+    this.beamSpiral = new THREE.Mesh(helix, glowMaterial(0xc06cff, 0.85));
+    this.beamSpiral.frustumCulled = false;
+    this.beamSpiral.renderOrder = 7;
+    this.beamGroup.add(this.beamSpiral);
     this.beamGroup.visible = false;
     this.beamTip.visible = false;
     this.scene.add(this.beamGroup, this.beamTip);
@@ -45,8 +66,10 @@ export class Combat {
   // A continuous beam that follows origin()/dir() callbacks, hits the first
   // enemy target along it and deals `dps` in short ticks.
   // `energy` sizes the explosions where it lands (see Explosions.js).
-  fireBeam({ origin, dir, duration, dps, radius, color, team = 'player', energy = 2.5, over = 0 }) {
+  fireBeam({ origin, dir, duration, dps, radius, color, team = 'player', energy = 2.5, over = 0, spiral = null }) {
     this.playerBeam = { origin, dir, duration, t: 0, dps, radius, color, team, energy, over, tick: 0, boom: 0, o: new THREE.Vector3(), d: new THREE.Vector3(), impact: null };
+    this.beamSpiral.visible = spiral != null;
+    if (spiral != null) this.beamSpiral.material.color.setHex(spiral);
     this.beamOuter.material.color.setHex(color);
     this.beamMid.material.color.setHex(color);
     this.beamTip.material.color.setHex(color);
@@ -105,6 +128,16 @@ export class Combat {
     this.beamOuter.scale.set(r, r, reach - start);
     this.beamMid.scale.set(r * 0.7, r * 0.7, reach - start);
     this.beamCore.scale.set(r * 0.38, r * 0.38, reach - start);
+    if (this.beamSpiral.visible) {
+      // Starts a couple of metres out, so it winds round the beam ahead of you
+      // instead of round your head.
+      const s0 = Math.min(2, reach * 0.5);
+      this.beamSpiral.position.z = s0;
+      this.beamSpiral.scale.set(r * 1.9, r * 1.9, 1);
+      this.beamSpiral.rotation.z -= dt * 18;
+      const idx = this.beamSpiral.geometry.index.count;
+      this.beamSpiral.geometry.setDrawRange(0, Math.min(idx, Math.ceil((Math.max(0, reach - start - s0) / SPIRAL_LEN) * SPIRAL_SEGS) * 5 * 6));
+    }
     this.beamTip.visible = true;
     this.beamTip.position.copy(o).addScaledVector(d, reach);
     this.beamTip.scale.setScalar(r * (hitT && reach >= len ? 7 : 3));
@@ -219,8 +252,10 @@ export class Combat {
         p.vel.lerp(want, Math.min(1, dt * p.homing.strength));
       }
       p.mesh.position.addScaledVector(p.vel, dt);
-      p.mesh.rotation.z += dt * 8;
-      const pulse = 1 + Math.sin(p.life * 40) * 0.08;
+      // A disc flies tilted toward you a little, so you can see it spin.
+      if (p.kind === 'disc') { p.mesh.rotation.x = p.team === 'player' ? -0.45 : 0; p.mesh.rotation.y += dt * 30; }
+      else p.mesh.rotation.z += dt * 8;
+      const pulse = 1 + Math.sin(p.life * 40) * (p.kind === 'disc' ? 0.02 : 0.08);
       p.mesh.scale.setScalar(p.radius * pulse);
       // Trail
       if (Math.random() < 0.7) this.fx.stream(p.mesh.position, p.color, { vy: 0, spread: p.radius * 0.5, size: Math.min(0.32, p.radius * 0.9), life: 0.25 });
@@ -244,11 +279,16 @@ export class Combat {
 
   // ---- Projectiles -----------------------------------------------------------
   fire({ origin, dir, speed, radius, damage, color, team = 'player', charged = false, homing = null, life = 3, owner = null, kind = 'blast' }) {
-    const group = new THREE.Group();
-    const core = new THREE.Mesh(this.coreGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }));
-    core.scale.setScalar(0.55);
-    const shell = new THREE.Mesh(this.coreGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }));
-    group.add(core, shell);
+    let group;
+    if (kind === 'disc') group = makeDisc(color);
+    else {
+      group = new THREE.Group();
+      const core = new THREE.Mesh(this.coreGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }));
+      core.scale.setScalar(0.55);
+      const shell = new THREE.Mesh(this.coreGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }));
+      group.add(core, shell);
+    }
+    const shell = group.children[1];
     group.position.copy(origin);
     group.scale.setScalar(radius);
     this.scene.add(group);
@@ -297,13 +337,21 @@ export class Combat {
   collideProjectile(p) {
     if (p.team === 'player') {
       for (const t of this.targets) {
-        if (t.team !== 'enemy' || (t.active && !t.active()) || p.ignore === t) continue;
+        if (t.team !== 'enemy' || (t.active && !t.active()) || p.ignore === t || p.sliced?.has(t)) continue;
         const s = t.sphere();
         if (segmentSphere(p.prev, p.mesh.position, s.center, s.radius + p.radius)) {
           const hit = { damage: p.damage, dir: p.vel.clone().normalize(), point: p.mesh.position.clone(), charged: p.charged, kind: 'blast', sphere: p.kind === 'sphere', power: p.charged ? 1 : 0.4, energy: Explosions.energyOf(p) };
           // A target can dodge at the last instant: the blast keeps flying.
           if (t.onBlast?.(hit) === 'dodged') { p.ignore = t; continue; }
           bus.emit('blast:hit', { ...hit, target: t });
+          // A Destructo Disc slices straight through, blowing up as it cuts,
+          // and flies on to explode wherever it lands.
+          if (p.kind === 'disc') {
+            (p.sliced ||= new Set()).add(t);
+            this.fx.explosion(hit.point, p.color, hit.energy * 0.6, hit.dir);
+            this.fx.burst(hit.point.clone(), 0xffffff, 14, 5, 0.06, 0.4);
+            continue;
+          }
           return true;
         }
       }
@@ -321,7 +369,12 @@ export class Combat {
     const energy = Explosions.energyOf(p);
     this.fx.explosion(p.mesh.position, p.color, energy, p.vel);
     this.fx.flash(p.mesh.position, p.color, p.radius * 4 + energy * 0.8, 0.18 + 0.06 * energy);
-    if (p.kind === 'sphere') this.fx.ring(p.mesh.position.clone(), p.color, { maxRadius: 6 * p.radius + 2, duration: 0.7 });
+    if (p.kind === 'sphere') this.fx.ring(p.mesh.position.clone(), p.color, { maxRadius: 6 * p.radius + 2 + 2 * (p.over || 0), duration: 0.7 + 0.15 * (p.over || 0) });
+    // Overcharged spheres and discs: extra shockwaves too.
+    if ((p.kind === 'sphere' || p.kind === 'disc') && p.over >= 1) {
+      this.fx.ring(p.mesh.position.clone(), 0xffffff, { maxRadius: 4 + 3 * energy, duration: 1.0, opacity: 0.8 });
+      this.fx.flash(p.mesh.position, 0xffffff, 3 + energy * 2, 0.45);
+    }
     // Overcharged ki blast: a second, bigger white shockwave and a long flash.
     if (p.kind === 'overcharged') {
       this.fx.ring(p.mesh.position.clone(), 0xffffff, { maxRadius: 4 + 3 * energy, duration: 0.9, opacity: 0.8 });

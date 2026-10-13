@@ -237,10 +237,11 @@ export class Transformation {
 
     // Aura target
     if (this.state !== 'transforming') {
-      if (p.kaioken > 0) {
-        // Kaio-ken: a blazing red aura over any form.
-        aura.setStyle({ color: 0xff2a1a, core: 0xffb0a0, scale: Math.max(1, f.aura.scale) * (1 + 0.3 * c) });
-        aura.target = 0.9 + 0.3 * c;
+      if (p.kaioken > 0 || p.kaiokenCharge) {
+        // Kaio-ken: a blazing red aura over any form, bigger the higher you push it.
+        const lvl = p.kaioken > 0 ? p.kaiokenLvl || 0 : p.kaiokenCharge.level;
+        aura.setStyle({ color: 0xff2a1a, core: 0xffb0a0, scale: Math.max(1, f.aura.scale) * (1 + 0.3 * c + 0.12 * lvl) });
+        aura.target = (p.kaioken > 0 ? 0.9 : 0.6) + 0.3 * c + 0.1 * lvl;
       } else if (this.state === 'poweringDown') aura.target = 0;
       else if (transformed) {
         aura.setStyle({ color: f.aura.color, core: f.aura.core, scale: f.aura.scale * (1 + 0.3 * c) });
@@ -253,19 +254,22 @@ export class Transformation {
     }
 
     // Hands glow
-    const handColor = transformed ? 0xffd23a : this.state === 'transforming' ? 0xfff3c0 : 0x9fdcff;
-    const baseGlow = transformed ? 0.45 : 0;
+    // Kaio-ken turns your fists blazing red.
+    const kk = p.kaioken > 0 || p.kaiokenCharge;
+    const kkLvl = p.kaioken > 0 ? p.kaiokenLvl || 0 : p.kaiokenCharge?.level || 0;
+    const handColor = kk ? 0xff2a1a : transformed ? 0xffd23a : this.state === 'transforming' ? 0xfff3c0 : 0x9fdcff;
+    const baseGlow = kk ? 0.7 + 0.08 * kkLvl : transformed ? 0.45 : 0;
     // Brawler feel: fists blaze up quickly while powering up.
     const chargeGlow = charging ? 0.4 + 0.9 * c : 0;
     const seqGlow = this.state === 'transforming' ? 1.2 : 0;
     for (const side of ['left', 'right']) {
       const fireCharge = p.chargeLevel(side);
       const lvl = Math.max(baseGlow, chargeGlow, seqGlow, fireCharge * (0.6 + 0.04 * kiLv)) * (0.7 + 0.03 * kiLv);
-      g.hands.setGlow(side, lvl, fireCharge > 0.05 && !charging ? 0xffe26a : handColor, transformed ? 1 : charging ? 0.2 + c * 0.8 : 0, transformed ? 0xffd23a : 0x9fdcff, dt);
+      g.hands.setGlow(side, lvl, fireCharge > 0.05 && !charging ? 0xffe26a : handColor, kk ? 1 : transformed ? 1 : charging ? 0.2 + c * 0.8 : 0, kk ? 0xff2a1a : transformed ? 0xffd23a : 0x9fdcff, dt);
       const h = g.hands.hands[side];
-      if (h.group.visible && (charging || transformed) && Math.random() < (charging ? 0.4 + c : 0.25) * g.particleBudget) {
+      if (h.group.visible && (charging || transformed || kk) && Math.random() < (charging ? 0.4 + c : kk ? 0.35 + 0.05 * kkLvl : 0.25) * g.particleBudget) {
         // Energy streams around the arms
-        g.effects.stream(h.worldPos, transformed ? f.aura.color : 0xbfe6ff, { vy: 0.6 + c, spread: 0.08, size: 0.025 + 0.03 * c, life: 0.4 });
+        g.effects.stream(h.worldPos, kk ? 0xff3a1a : transformed ? f.aura.color : 0xbfe6ff, { vy: 0.6 + c, spread: 0.08, size: 0.025 + 0.03 * c + (kk ? 0.008 * kkLvl : 0), life: 0.4 });
       }
     }
 

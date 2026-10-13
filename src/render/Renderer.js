@@ -69,4 +69,24 @@ export class Renderer {
   render(camera = this.camera) {
     this.renderer.render(this.scene, camera);
   }
+
+  // Compile the shaders of everything in the scene, hidden things included
+  // (slow-motion tint, knockdown dust, result panels...). Otherwise the first
+  // frame that shows one stops the game while its shader compiles, which is
+  // the freeze you got right after beating a boss.
+  warmUp(camera = this.camera) {
+    const r = this.renderer;
+    const hidden = [];
+    this.scene.traverse((o) => { if (!o.visible) { hidden.push(o); o.visible = true; } });
+    try {
+      const mats = r.compile(this.scene, camera);
+      // Finish them now too (three otherwise waits for the first draw), so
+      // the wait lands here, behind the fade to black.
+      for (const m of mats) for (const prog of r.properties.get(m).programs?.values() || []) prog.getUniforms();
+    } catch {
+      /* compiling early is only an optimisation */
+    } finally {
+      for (const o of hidden) o.visible = false;
+    }
+  }
 }

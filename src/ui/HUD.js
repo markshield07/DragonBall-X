@@ -127,11 +127,11 @@ export class HUD {
     const badges = [];
     if (p.flying) badges.push(['FLYING', '#bfe6ff']);
     if (game.speedFocus.active > 0) badges.push([`SLOW-MO ${Math.ceil(game.speedFocus.active)}s`, '#7fd8ff']);
-    if (p.kaioken > 0) badges.push([`KAIO-KEN ${Math.ceil(p.kaioken)}s`, '#ff5a4a']);
+    if (p.kaioken > 0) badges.push([`KAIO-KEN x${p.kaiokenX()} ${Math.ceil(p.kaioken)}s`, '#ff5a4a']);
     if (game.state === 'training' && game.training.gravity > 1) badges.push([`${game.training.gravity}x G`, '#ff6a6a']);
     if (game.state === 'training' && game.training.inChamber) badges.push([`DAY ${game.training.chamberDays()}`, '#ffffff']);
     badges.slice(0, 3).forEach(([s, c], i) => text(s, W - 28, 100 + i * 30, 24, c, 'right'));
-    text(formatNumber(this.displayPL), tx, 150, 54, p.form === 'base' ? '#ffffff' : COLORS.gold);
+    text(formatNumber(this.displayPL), tx, 150, 54, p.kaioken > 0 ? '#ff6a5a' : p.form === 'base' ? '#ffffff' : COLORS.gold);
     // Resources
     bar(28, 172, 712, 34, p.health / prog.maxHealth(), healthColor(p.health / prog.maxHealth()), `HP ${Math.ceil(p.health)}`);
     bar(28, 214, 712, 34, p.ki / prog.maxKi(), '#4cc3ff', `KI ${Math.floor(p.ki)}`);

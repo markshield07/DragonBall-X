@@ -2,7 +2,7 @@
 // How to Play page names the right button for the device you're playing on.
 export const CONTROLS = {
   punch: { vr: 'Swing your fists', desktop: 'Left click', what: 'Punch' },
-  fire: { vr: 'Trigger', desktop: 'Right click', what: 'Fire your ki attack' },
+  fire: { vr: 'Trigger', desktop: 'Right click', what: 'Fire ki attack (hold to charge)' },
   powerUp: { vr: 'Hold both grips', desktop: 'Hold Space', what: 'Power up (fills ki)' },
   transform: { vr: 'A button', desktop: 'T', what: 'Transform / power down' },
   switchAttack: { vr: 'B button', desktop: 'E', what: 'Switch attack' },

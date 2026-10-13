@@ -353,14 +353,17 @@ export class GameMenu {
     ui.text('Ki cost', a.x + 720, y, { size: 24, color: COLORS.muted });
     ui.text('How to get it', a.x + 860, y, { size: 24, color: COLORS.muted });
     const maxDmg = Math.max(...ATTACK_ORDER.map((id) => ATTACKS[id].damage));
+    // Rows shrink a little to fit every attack above the footer.
+    const rowH = Math.min(50, (a.y + a.h - 50 - (y + 8)) / ATTACK_ORDER.length);
+    const fs = Math.min(28, Math.round(rowH * 0.6));
     y += 8;
     for (const id of ATTACK_ORDER) {
       const atk = ATTACKS[id];
       const has = p.data.unlockedAttacks.includes(id);
       const col = has ? COLORS.text : '#7b84a8';
-      y += 50;
+      y += rowH;
       if (has) {
-        ui.button(`equip-${id}`, '', a.x - 10, y - 36, 530, 48, {
+        ui.button(`equip-${id}`, '', a.x - 10, y - rowH * 0.72, 530, rowH - 2, {
           size: 1, color: p.data.equipped.includes(id) ? '#2a4a8a' : undefined,
           onClick: () => {
             const eq = p.data.equipped;
@@ -372,14 +375,14 @@ export class GameMenu {
           },
         });
       }
-      ui.text(`${has ? '★' : '◇'} ${atk.name}`, a.x, y, { size: 28, color: col, maxWidth: 510 });
+      ui.text(`${has ? '★' : '◇'} ${atk.name}`, a.x, y, { size: fs, color: col, maxWidth: 510 });
       // Power as a bar (Kaio-ken is a boost, not a hit).
-      if (atk.damage > 0) ui.bar(a.x + 540, y - 24, 150, 22, Math.max(0.06, Math.sqrt(atk.damage / maxDmg)), has ? '#ff8a1a' : '#4a4f6a');
-      else ui.text('Boost', a.x + 540, y, { size: 24, color: col, weight: 'normal' });
-      ui.text(String(atk.kiCost), a.x + 720, y, { size: 26, color: col, weight: 'normal' });
-      ui.text(has ? (p.data.equipped.includes(id) ? 'Equipped' : 'Ready to equip') : atk.unlock.label, a.x + 860, y, { size: 22, color: has ? COLORS.green : col, weight: 'normal', maxWidth: a.w - 860 });
+      if (atk.damage > 0) ui.bar(a.x + 540, y - fs * 0.85, 150, Math.round(fs * 0.8), Math.max(0.06, Math.sqrt(atk.damage / maxDmg)), has ? '#ff8a1a' : '#4a4f6a');
+      else ui.text('Boost', a.x + 540, y, { size: fs - 4, color: col, weight: 'normal' });
+      ui.text(atk.kiCost >= 1 ? String(atk.kiCost) : 'Low', a.x + 720, y, { size: fs - 2, color: col, weight: 'normal' });
+      ui.text(has ? (p.data.equipped.includes(id) ? 'Equipped' : 'Ready to equip') : atk.unlock.label, a.x + 860, y, { size: Math.min(22, fs - 4), color: has ? COLORS.green : col, weight: 'normal', maxWidth: a.w - 860 });
     }
-    ui.text(`Fire: ${g.isXR ? 'trigger' : 'right click'}   ·   Switch attack: ${g.isXR ? 'B button' : 'E'}   ·   Big attacks: hold to charge, let go to fire`, a.x + a.w / 2, a.y + a.h - 6, { size: 24, color: COLORS.muted, align: 'center', weight: 'normal', maxWidth: a.w });
+    ui.text(`Fire: ${g.isXR ? 'trigger' : 'right click'}   ·   Switch attack: ${g.isXR ? 'B button' : 'E'}   ·   Hold any attack to charge it up`, a.x + a.w / 2, a.y + a.h - 6, { size: 24, color: COLORS.muted, align: 'center', weight: 'normal', maxWidth: a.w });
   }
 
   // How to Play: the buttons for this device, and what you're aiming for.

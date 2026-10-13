@@ -134,7 +134,7 @@ export class Game {
 
   currentPowerLevel() {
     const charge = this.transformation?.charge || 0;
-    return Math.round(this.progress.powerLevel(this.player.form) * (1 + 0.15 * charge));
+    return Math.round(this.progress.powerLevel(this.player.form) * (1 + 0.15 * charge) * this.player.kaiokenX());
   }
 
   hasSave() { return SaveSystem.hasSave(); }
@@ -474,7 +474,7 @@ export class Game {
       this.transformation.forceBase();
     }
     if (!this.player.alive) this.player.resetResources();
-    this.fadeTo(() => this.resetPlayerPosition());
+    this.fadeTo(() => { this.resetPlayerPosition(); this.renderer.warmUp(); });
     this.hud.setMode(this.isXR, true);
     this.updatePointerMode();
     this.save();
@@ -500,6 +500,7 @@ export class Game {
     this.fadeTo(() => {
       this.resetPlayerPosition();
       this.boss.start(def.id);
+      this.renderer.warmUp();
     });
     this.hud.setMode(this.isXR, true);
     this.banner.clear(); // drop any leftover training tips
@@ -636,7 +637,10 @@ export class Game {
       if (k > 0.04) { this.haptic('left', clamp(k * 4, 0.15, 1), 40 + 200 * k); this.haptic('right', clamp(k * 4, 0.15, 1), 40 + 200 * k); }
     });
     bus.on('ki:empty', () => bus.emit('hud:message', { text: `Not enough ki! Power up: ${key(this, 'powerUp').toLowerCase()}`, color: '#4cc3ff' }));
-    bus.on('attack:selected', (a) => bus.emit('hud:message', { text: `Equipped: ${a.attack.name}`, color: '#4cc3ff' }));
+    bus.on('attack:selected', ({ attack }) => {
+      const how = { blast: 'tap to shoot, hold to charge', barrage: 'hold to fire, longer = stronger', buff: 'tap for x2, hold for x20', beam: 'hold to charge, let go to fire' }[attack.type] || 'hold to charge, let go to throw';
+      bus.emit('hud:message', { text: `${attack.name}: ${how}`, color: '#4cc3ff' });
+    });
     bus.on('player:hit', (h) => {
       if (h.blocked) this.audio.block(); else this.audio.hurt();
       this.haptic('left', h.blocked ? 0.4 : 0.9, h.blocked ? 60 : 150);
@@ -741,10 +745,20 @@ export class Game {
       if (on) this.banner.push({ title: 'SLOW MOTION', color: '#7fd8ff', duration: 1.0, priority: true });
       this.updateActionButtons(true);
     });
-    bus.on('kaioken', ({ on }) => {
+    bus.on('kaioken', ({ on, x = 2, level = 0 }) => {
       if (on) {
         this.audio.kaioken();
-        this.banner.push({ title: 'KAIO-KEN!', subtitle: 'Damage and speed up · burns stamina', color: '#ff4a3a', duration: 1.6, priority: true });
+        this.banner.push({ title: x >= 20 ? 'KAIO-KEN TIMES TWENTY!' : `KAIO-KEN x${x}!`, subtitle: `Power Level ${formatNumber(this.currentPowerLevel())} · hits harder, moves faster · burns stamina`, color: '#ff4a3a', duration: 2, big: x >= 10, priority: true });
+        // A red shockwave bursts out around you.
+        const feet = this.player.headWorld.clone();
+        feet.y = this.player.groundY() + 0.05;
+        this.effects.ring(feet.clone(), 0xff2a1a, { maxRadius: 4 + 0.8 * level, duration: 0.8 + 0.1 * level, opacity: 0.8 });
+        if (level >= 2) this.effects.ring(feet.clone(), 0xffb0a0, { maxRadius: 8 + 1.5 * level, duration: 1.2, opacity: 0.5 });
+        this.effects.burst(feet.clone().setY(feet.y + 0.8), 0xff3a1a, 30 + 10 * level, 4 + level, 0.08, 0.6);
+        this.effects.dust(feet, 1 + 0.3 * level, 6 + 2 * level);
+        this.haptic('left', 0.6 + 0.1 * level, 250);
+        this.haptic('right', 0.6 + 0.1 * level, 250);
+        this.addShake(0.08 + 0.04 * level);
       } else bus.emit('hud:message', { text: 'Kaio-ken wore off', color: '#ff8a8a' });
     });
     bus.on('flight:changed', ({ flying }) => {

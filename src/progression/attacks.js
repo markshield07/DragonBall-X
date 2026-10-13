@@ -16,7 +16,7 @@ export const ATTACKS = {
     radius: 0.09,
     color: 0x7fd8ff,
     unlock: null,
-    effects: 'Small fast energy shot from the firing hand.',
+    effects: 'Tap for a quick shot. Hold to charge it up (up to 9 seconds) for a much bigger blast.',
   },
   chargedBlast: {
     id: 'chargedBlast',
@@ -32,46 +32,71 @@ export const ATTACKS = {
     radius: 0.22,
     color: 0xffe26a,
     unlock: null,
-    effects: 'Hold to gather energy in your hand, release to launch a heavy blast. Keep holding after it is full and it grows bigger and bigger (uses ki) for a huge explosion.',
+    effects: 'Hold to gather energy in your hand, let go to launch a heavy blast. Keep holding (up to 9 seconds) and it grows bigger and bigger (uses ki) for a huge explosion.',
   },
   // Beams: hold the trigger (bring both hands together in VR) to charge a
   // sphere, then release or push both hands forward to fire. Aim steers it.
   kamehameha: {
     id: 'kamehameha', name: 'Kamehameha', implemented: true, level: 2, type: 'beam',
-    damage: 120, kiCost: 45, chargeTime: 1.6, cooldown: 5, color: 0x4fc3ff, beamRadius: 0.3, duration: 1.4,
+    damage: 120, kiCost: 45, chargeTime: 1.6, cooldown: 5, color: 0x4fc3ff, beamRadius: 0.3, duration: 1.4, boom: 5,
     unlock: { stat: ['ki', 4], boss: 'raxor', label: 'Ki level 4 or defeat Raxor' },
-    effects: 'Bring both hands together, charge, push forward to unleash a beam. Keep holding after it is full and it grows bigger and bigger (uses ki).',
+    effects: 'Bring both hands together, charge, push forward to unleash a beam. Keep holding (up to 9 seconds) and it grows bigger and bigger (uses ki).',
   },
   galickGun: {
     id: 'galickGun', name: 'Galick Gun', implemented: true, level: 2, type: 'beam',
-    damage: 110, kiCost: 40, chargeTime: 1.3, cooldown: 5, color: 0xb44dff, beamRadius: 0.28, duration: 1.2,
+    damage: 110, kiCost: 40, chargeTime: 1.3, cooldown: 5, color: 0xb44dff, beamRadius: 0.28, duration: 1.2, boom: 5,
     unlock: { stat: ['ki', 6], boss: 'veyron', label: 'Ki level 6 or defeat Lord Veyron' },
-    effects: 'Purple two-handed beam that charges faster. Keep holding to make it bigger.',
+    effects: 'Purple two-handed beam that charges faster. Keep holding (up to 9 seconds) to make it bigger.',
   },
   kaioken: {
     id: 'kaioken', name: 'Kaio-ken Power Boost', implemented: true, level: 2, type: 'buff',
-    damage: 0, kiCost: 30, chargeTime: 0, cooldown: 20, color: 0xff2a2a, duration: 12,
+    damage: 0, kiCost: 30, chargeTime: 0, cooldown: 18, color: 0xff2a2a, duration: 12,
     unlock: { stat: ['strength', 5], label: 'Strength level 5' },
-    effects: 'Pull the trigger: red aura, +50% damage and speed for 12 s. Drains stamina.',
+    effects: 'Tap for Kaio-ken x2. Hold to push it higher: x3, x4, x10, x20! Red aura, more power and speed for 12 s, but it burns stamina.',
   },
   barrage: {
     id: 'barrage', name: 'Energy Barrage', implemented: true, level: 3, type: 'barrage',
-    damage: 4, kiCost: 1.5, chargeTime: 0, cooldown: 0.07, speed: 22, radius: 0.07, color: 0xffe066,
+    damage: 4, kiCost: 0.4, chargeTime: 0, cooldown: 0.07, speed: 22, radius: 0.07, color: 0xffe066,
     unlock: { stat: ['speed', 4], label: 'Speed level 4' },
-    effects: 'Hold the trigger for a rapid stream of blasts.',
+    effects: 'Hold for a stream of exploding blasts. The longer you hold (up to 9 seconds), the faster and bigger they get.',
   },
   giantSphere: {
     id: 'giantSphere', name: 'Giant Energy Sphere', implemented: true, level: 3, type: 'sphere',
     damage: 300, kiCost: 90, chargeTime: 3, cooldown: 12, speed: 6, radius: 1.1, color: 0x9fe8ff,
     unlock: { stat: ['ki', 10], boss: 'kurog', label: 'Ki level 10 or defeat Titan Kurog' },
-    effects: 'Hold the trigger (raise your hand) to gather a huge sphere, release to throw it.',
+    effects: 'Hold the trigger (raise your hand) to gather a huge sphere, let go to throw it. Keep holding (up to 9 seconds) to grow it even bigger.',
   },
   ultimateBeam: {
     id: 'ultimateBeam', name: 'Ultimate Blue Energy Beam', implemented: true, level: 4, type: 'beam',
-    damage: 600, kiCost: 70, chargeTime: 2, cooldown: 8, color: 0x3fb6ff, beamRadius: 0.5, duration: 1.8, form: 'ssj5',
+    damage: 600, kiCost: 70, chargeTime: 2, cooldown: 8, color: 0x3fb6ff, beamRadius: 0.5, duration: 1.8, boom: 7, form: 'ssj5',
     unlock: { form: 'ssj5', label: 'Unlock Super Saiyan 5 (usable in that form)' },
-    effects: 'The final form\'s exclusive beam. Keep holding to make it bigger.',
+    effects: 'The final form\'s exclusive beam. Keep holding (up to 9 seconds) to make it bigger.',
+  },
+  // More ki attacks.
+  destructoDisc: {
+    id: 'destructoDisc', name: 'Destructo Disc', implemented: true, level: 2, type: 'disc',
+    damage: 90, kiCost: 30, chargeTime: 1.2, cooldown: 3, speed: 24, radius: 0.32, color: 0xfff3a0,
+    unlock: { stat: ['speed', 5], boss: 'raxor', label: 'Speed level 5 or defeat Raxor' },
+    effects: 'Hold your hand up to spin a razor disc of ki, let go to throw it. It slices through enemies and explodes. Keep holding (up to 9 seconds) to make it bigger.',
+  },
+  bigBang: {
+    id: 'bigBang', name: 'Big Bang Attack', implemented: true, level: 3, type: 'charged',
+    damage: 160, kiCost: 40, chargeTime: 1.5, cooldown: 3, speed: 20, radius: 0.3, color: 0x9fdcff, boom: 2.2,
+    unlock: { stat: ['ki', 8], boss: 'veyron', label: 'Ki level 8 or defeat Lord Veyron' },
+    effects: 'A fast ball of ki from your open palm with a giant explosion. Keep holding (up to 9 seconds) to make it bigger.',
+  },
+  specialBeamCannon: {
+    id: 'specialBeamCannon', name: 'Special Beam Cannon', implemented: true, level: 3, type: 'beam', spiral: true,
+    damage: 200, kiCost: 50, chargeTime: 2.4, cooldown: 6, color: 0xeaff7a, spiralColor: 0xc06cff, beamRadius: 0.13, duration: 1.0, boom: 4.5,
+    unlock: { stat: ['strength', 8], boss: 'kurog', label: 'Strength level 8 or defeat Titan Kurog' },
+    effects: 'A thin drilling beam wrapped in a purple spiral. Slow to charge but hits very hard. Keep holding (up to 9 seconds) to make it bigger.',
+  },
+  finalFlash: {
+    id: 'finalFlash', name: 'Final Flash', implemented: true, level: 4, type: 'beam',
+    damage: 220, kiCost: 55, chargeTime: 2.2, cooldown: 7, color: 0xfff07a, beamRadius: 0.48, duration: 1.6, boom: 6,
+    unlock: { stat: ['ki', 12], boss: 'zareth', label: 'Ki level 12 or defeat Emperor Zareth' },
+    effects: 'A huge golden beam from both hands. Keep holding (up to 9 seconds) to make it even bigger.',
   },
 };
 
-export const ATTACK_ORDER = ['kiBlast', 'chargedBlast', 'kamehameha', 'galickGun', 'kaioken', 'barrage', 'giantSphere', 'ultimateBeam'];
+export const ATTACK_ORDER = ['kiBlast', 'chargedBlast', 'kamehameha', 'galickGun', 'kaioken', 'barrage', 'destructoDisc', 'giantSphere', 'bigBang', 'specialBeamCannon', 'finalFlash', 'ultimateBeam'];
