@@ -333,66 +333,45 @@ export class Arena {
   }
 
   buildMountains() {
-    // Two rings: nearer green-blue peaks, farther pale-blue silhouettes.
-    const near = [toon(0x6f8fb0, { flat: true }), toon(0x7f9cba, { flat: true }), toon(0x5f7fa3, { flat: true })];
-    const far = toon(0xa9c3e0, { flat: true });
-    const snow = toon(0xf6f9ff, { flat: true });
-    for (let i = 0; i < 22; i++) {
-      const a = (i / 22) * Math.PI * 2 + this.r() * 0.15;
-      const r = 165 + this.r() * 45;
-      const h = 55 + this.r() * 80;
-      const rad = 28 + this.r() * 22;
-      const m = new THREE.Mesh(new THREE.ConeGeometry(rad, h, 7 + Math.floor(this.r() * 3), 2), near[i % 3]);
-      // Jagged anime peaks: push the middle ring of vertices around
-      jitter(m.geometry, 0.12 * rad, this);
-      m.position.set(Math.cos(a) * r, h / 2 - 3, Math.sin(a) * r);
-      m.rotation.y = this.r() * Math.PI;
-      this.group.add(m);
-      if (h > 95) {
-        const cap = new THREE.Mesh(new THREE.ConeGeometry(rad * 0.33, h * 0.24, 7), snow);
-        cap.position.set(m.position.x, h - 3 - h * 0.12, m.position.z);
-        cap.rotation.y = m.rotation.y;
-        this.group.add(cap);
+    // Overlapping eroded ridge masses, rather than pointed geometric cones.
+    // Keep them outside the gameplay area and let fog blend distant layers.
+    const near = [0x927b68, 0xa08a78, 0x877665];
+    const far = [0x879eb6, 0x9aafc5, 0x7f9db6];
+    for(let layer=0;layer<2;layer++) {
+      const count=layer===0?24:24;
+      for(let i=0;i<count;i++) {
+        const angle=(i+this.r()*.4)*Math.PI*2/count;
+        const distance=(layer===0?170:275)+(this.r()-.5)*42;
+        const x=Math.cos(angle)*distance,z=Math.sin(angle)*distance;
+        const height=(layer===0?45:80)+this.r()*(layer===0?68:85);
+        const radius=(layer===0?26:49)+this.r()*22;
+        const geo=erodedRockGeometry(radius,height,14,9,this.r()*1000);
+        const mat=toon((layer===0?near:far)[i%3],{flat:true});
+        const mountain=new THREE.Mesh(geo,mat);
+        mountain.position.set(x,terrainHeight(x,z)-5,z);
+        mountain.rotation.y=this.r()*Math.PI*2;
+        this.group.add(mountain);
       }
-    }
-    for (let i = 0; i < 14; i++) {
-      const a = (i / 14) * Math.PI * 2 + 0.2 + this.r() * 0.2;
-      const r = 270 + this.r() * 30;
-      const h = 110 + this.r() * 70;
-      const m = new THREE.Mesh(new THREE.ConeGeometry(55 + this.r() * 25, h, 6), far);
-      m.position.set(Math.cos(a) * r, h / 2 - 5, Math.sin(a) * r);
-      m.rotation.y = this.r() * Math.PI;
-      this.group.add(m);
     }
   }
 
   buildRockFormations() {
     const strata = STRATA.map((col) => toon(col, { flat: true }));
     const capGrass = toon(0x6cb848, { flat: true });
-    // Tall layered rock pillars: stacked tapering drums in alternating
-    // sandstone tones, the classic anime wasteland silhouette.
-    const pillar = (x, z, h, rad, grassTop) => {
-      const y0 = terrainHeight(x, z) - 0.5;
-      const layers = 3 + Math.floor(this.r() * 3);
-      let y = y0;
-      let rr = rad;
-      const rot = this.r() * 3;
-      for (let i = 0; i < layers; i++) {
-        const lh = h / layers * (0.8 + this.r() * 0.4);
-        const top = rr * (0.78 + this.r() * 0.12);
-        const m = new THREE.Mesh(new THREE.CylinderGeometry(top, rr, lh, 7), strata[(((i + Math.floor(x)) % strata.length) + strata.length) % strata.length]);
-        m.position.set(x + (this.r() - 0.5) * rad * 0.15, y + lh / 2, z + (this.r() - 0.5) * rad * 0.15);
-        m.rotation.y = rot + i * 0.3;
-        m.castShadow = h < 20;
-        this.group.add(m);
-        y += lh;
-        rr = top * 1.04;
+    // Irregular weathered sandstone columns, single continuous mesh each.
+    // Vertex heights and radial profiles are offset to avoid stacked drum shapes.
+    const pillar=(x,z,h,rad,grassTop)=>{
+      const geo=erodedRockGeometry(rad,h,12,8,this.r()*1000,true);
+      const m=new THREE.Mesh(geo,strata[Math.floor(this.r()*strata.length)]);
+      m.position.set(x,terrainHeight(x,z)-.7,z);
+      m.rotation.y=this.r()*Math.PI*2;
+      m.castShadow=h<23;
+      this.group.add(m);
+      if(grassTop){
+        const cap=new THREE.Mesh(new THREE.CylinderGeometry(rad*.65,rad*.72,.35,12),capGrass);
+        cap.position.set(x,terrainHeight(x,z)+h*.96,z);
+        this.group.add(cap);
       }
-      // Overhanging cap
-      const cap = new THREE.Mesh(new THREE.CylinderGeometry(rr * 1.35, rr * 0.9, Math.max(1, rad * 0.5), 7), grassTop ? capGrass : strata[2]);
-      cap.position.set(x, y + rad * 0.2, z);
-      cap.rotation.y = rot;
-      this.group.add(cap);
     };
     const spots = [
       [-26, -20, 14, 2.2], [22, -30, 18, 2.6], [-38, 6, 11, 2.0], [36, 12, 16, 2.4], [-14, -52, 22, 3.0],
@@ -400,25 +379,15 @@ export class Arena {
       [62, 34, 30, 4.0], [-70, 20, 34, 4.5], [40, -80, 40, 5.0], [-48, -90, 36, 4.5], [86, -40, 28, 3.6], [-90, -12, 26, 3.4],
     ];
     spots.forEach(([x, z, h, rad], i) => pillar(x, z, h, rad, i % 3 === 0));
-    // Mesas: wide flat-topped plateaus further out
-    const mesas = [[95, 40, 14, 18], [-105, 55, 18, 22], [70, -105, 16, 20], [-80, -110, 20, 16], [125, -5, 22, 14], [-20, 120, 18, 24]];
-    for (const [x, z, h, rad] of mesas) {
-      const y0 = terrainHeight(x, z) - 1;
-      let y = y0;
-      let rr = rad;
-      for (let i = 0; i < 3; i++) {
-        const lh = h / 3;
-        const top = rr * 0.92;
-        const m = new THREE.Mesh(new THREE.CylinderGeometry(top, rr, lh, 9), strata[(i + 1) % strata.length]);
-        m.position.set(x, y + lh / 2, z);
-        m.rotation.y = i * 0.4;
-        this.group.add(m);
-        y += lh;
-        rr = top;
-      }
-      const lid = new THREE.Mesh(new THREE.CylinderGeometry(rr * 1.02, rr * 1.02, 0.8, 9), capGrass);
-      lid.position.set(x, y + 0.3, z);
-      this.group.add(lid);
+    // Massive plateaus behind the smaller spires.
+    const mesas=[[95,40,14,18],[-105,55,18,22],[70,-105,16,20],[-80,-110,20,16],[125,-5,22,14],[-20,120,18,24]];
+    for(const [x,z,h,rad] of mesas){
+      const m=new THREE.Mesh(erodedRockGeometry(rad,h,18,7,this.r()*1000,true),strata[Math.floor(this.r()*strata.length)]);
+      m.position.set(x,terrainHeight(x,z)-1,z);
+      this.group.add(m);
+      const cap=new THREE.Mesh(new THREE.CylinderGeometry(rad*.81,rad*.84,.55,18),capGrass);
+      cap.position.set(x,terrainHeight(x,z)+h-.45,z);
+      this.group.add(cap);
     }
     // Stylized cliffs: angular boulder walls behind the boss gate
     const cliff = toon(0xb98258, { flat: true });
@@ -563,8 +532,8 @@ export class Arena {
       inst.count = i;
       group.add(inst);
     };
-    make(1000, 8.5, 45, this.detailGroup, 0x4f9e33);
-    make(1400, 8.5, 30, this.highGroup, 0x5fb23d);
+    make(1700, 8.5, 65, this.detailGroup, 0x4f9e33);
+    make(2500, 8.5, 60, this.highGroup, 0x73bc49);
   }
 
   buildFloatingRocks() {
@@ -692,6 +661,42 @@ export class Arena {
     this.hemi.intensity = 0.95 * k;
     this.sun.intensity = 1.45 * k;
   }
+}
+
+// A tapered, asymmetric continuous rock surface with stepped erosion bands.
+// Replaces stacks of cylinders / repetitive cones while retaining modest Quest
+// geometry budgets. Uses indexed triangles and calculated normals.
+function erodedRockGeometry(radius,height,sides=12,rings=8,seed=0,mesa=false){
+  const random=(v)=>{const x=Math.sin(v*127.1+seed*17.17)*43758.5453;return x-Math.floor(x);};
+  const vertices=[],indices=[];
+  const samples=Array.from({length:sides},(_,j)=>.81+random(j+11)*.35);
+  for(let i=0;i<=rings;i++){
+    const t=i/rings;
+    const taper=mesa?(t>.83?.83:.97-.12*t):(1-.63*Math.pow(t,1.65));
+    const band=1+.08*Math.sin(t*height*.65+seed);
+    for(let j=0;j<sides;j++){
+      const a=2*Math.PI*j/sides;
+      const jitter=.965+.07*random(j*31+i*7);
+      const r=radius*taper*band*samples[j]*jitter;
+      vertices.push(Math.cos(a)*r+(t*t)*radius*.10*Math.sin(seed),
+        t*height+(random(j+19)*.13-.065)*height/rings,
+        Math.sin(a)*r+(t*t)*radius*.08*Math.cos(seed));
+    }
+  }
+  for(let i=0;i<rings;i++)for(let j=0;j<sides;j++){
+    const a=i*sides+j,b=i*sides+(j+1)%sides,c=(i+1)*sides+j,d=(i+1)*sides+(j+1)%sides;
+    indices.push(a,b,c,b,d,c);
+  }
+  // Top and bottom cap; capped formations cast sensible shadows.
+  const bottom=vertices.length/3;vertices.push(0,0,0);
+  const top=vertices.length/3;vertices.push(0,height,0);
+  for(let j=0;j<sides;j++){
+    indices.push(bottom,j,(j+1)%sides);
+    indices.push(top,rings*sides+(j+1)%sides,rings*sides+j);
+  }
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));
+  geo.setIndex(indices);geo.computeVertexNormals();return geo;
 }
 
 // Push the middle vertices of a cone outward/inward a little for jagged peaks.
