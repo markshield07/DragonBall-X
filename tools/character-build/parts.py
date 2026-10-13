@@ -1,4 +1,4 @@
-# Executed inside build_rokan.py (shares its globals): clothing, hair, eyes, brows.
+# Executed inside build_character.py (shares its globals): clothing, hair, eyes, brows.
 import numpy as np
 from sculpt import vertex_normals
 import random
@@ -15,10 +15,34 @@ for bone, lst in weights.items():
 def wsum(*bones):
     return sum(W[b] for b in bones)
 
-def shell(name, face_pred, offset_fn, mat, jitter_hem=None):
+def relax(P, faces, idx, off, iters):
+    """Cloth drape: Laplacian smoothing that keeps every vertex at least `off`
+    outside the skin, so fabric bridges the grooves between muscles. Open
+    edges are smoothed along themselves, which also evens out stair-stepped hems."""
+    n = len(P)
+    nbr = [set() for _ in range(n)]
+    edges = {}
+    for f in faces:
+        for i in range(len(f)):
+            a, b = f[i], f[(i + 1) % len(f)]
+            nbr[a].add(b); nbr[b].add(a)
+            e = (min(a, b), max(a, b)); edges[e] = edges.get(e, 0) + 1
+    bnbr = [set() for _ in range(n)]
+    for (a, b), c in edges.items():
+        if c == 1: bnbr[a].add(b); bnbr[b].add(a)
+    use = [list(bnbr[k]) if bnbr[k] else list(nbr[k]) for k in range(n)]
+    for _ in range(iters):
+        P[:] = np.array([P[u].mean(axis=0) if u else P[k] for k, u in enumerate(use)]) * 0.6 + P * 0.4
+        out = np.einsum('ij,ij->i', P - BV[idx], BN[idx])
+        P += BN[idx] * np.maximum(0, off - out)[:, None]
+
+# New characters get a little drape on every piece to even out stair-stepped edges
+# (Rokan stays exactly as approved).
+DRAPE_DEFAULT = 0 if CHAR == 'rokan' else 3
+def shell(name, face_pred, offset_fn, mat, jitter_hem=None, drape=None):
     """Duplicate body faces chosen by face_pred(vertex mask) and push them out
     along the normals by offset_fn(vertex index array) meters. Skinned with the
-    body's weights (copied per vertex)."""
+    body's weights (copied per vertex). drape > 0 relaxes it like cloth."""
     sel = [f for f in BF if face_pred(f)]
     used = sorted({i for f in sel for i in f})
     remap = {v: k for k, v in enumerate(used)}
@@ -26,6 +50,9 @@ def shell(name, face_pred, offset_fn, mat, jitter_hem=None):
     off = offset_fn(idx)
     P = BV[idx] + BN[idx] * off[:, None]
     faces = [[remap[i] for i in f] for f in sel]
+    drape = DRAPE_DEFAULT if drape is None else drape
+    if drape:
+        relax(P, faces, idx, off, drape)
     if jitter_hem:
         jitter_hem(P, faces, idx)
     ob = make_mesh(name, P.tolist(), faces)
@@ -40,151 +67,8 @@ NAVEL = 1.105
 def ss(x):
     x = np.clip(x, 0, 1); return x * x * (3 - 2 * x)
 
-# ---- Pants: baggy crimson martial pants, gathered above the ankle wraps ----
-PANT_TOP, PANT_BOT = NAVEL - 0.065, ANK + 0.13
-def pants_face(f):
-    return all(PANT_BOT - 0.001 <= z[i] <= PANT_TOP for i in f) and min(abs(BV[i, 0]) for i in f) >= 0 \
-        and wsum('hand_l', 'hand_r', 'lowerarm_l', 'lowerarm_r')[list(f)].max() < 0.05
-def pants_off(idx):
-    zz = z[idx]
-    bag = 0.012 + 0.018 * ss((PANT_TOP - 0.06 - zz) / 0.25) + 0.016 * ss((KNEE + 0.05 - zz) / 0.3)
-    cuff = ss((zz - PANT_BOT) / 0.07)   # gathered cuff
-    return 0.012 + (bag - 0.012) * (0.45 + 0.55 * cuff)
-def ragged(P, faces, idx):
-    for k, i in enumerate(idx):
-        if z[i] < PANT_BOT + 0.03:
-            P[k, 2] -= 0.025 + 0.02 * random.random()
-pants = shell('Pants', pants_face, pants_off, material('Pants', srgb(0xa3161c)), ragged)
-
-# ---- Sash: wide black band tied at the front, two long tails ----
-def sash_face(f):
-    return all(NAVEL - 0.085 <= z[i] <= NAVEL - 0.02 for i in f) and wsum('hand_l', 'hand_r', 'lowerarm_l', 'lowerarm_r')[list(f)].max() < 0.05
-sash_mat = material('Sash', srgb(0x141414))
-sash = shell('Sash', sash_face, lambda idx: np.full(len(idx), 0.024), sash_mat)
-
-def front_point(x, zz):
-    """Frontmost body vertex near (x, z)."""
-    m = (np.abs(BV[:, 0] - x) < 0.02) & (np.abs(z - zz) < 0.02)
-    cand = np.where(m)[0]
-    k = cand[np.argmin(BV[cand, 1])]
-    return BV[k].copy(), BN[k].copy()
-
-import bmesh
-def add_box_chain(name, pts, widths, thick, mat, bone):
-    """A flat cloth strip through pts (list of 3D), facing -y."""
-    verts, faces = [], []
-    for i, (p, w) in enumerate(zip(pts, widths)):
-        for sx in (-1, 1):
-            for sy in (-1, 1):
-                verts.append((p[0] + sx * w / 2, p[1] + sy * thick / 2, p[2]))
-        if i:
-            a = (i - 1) * 4; b = i * 4
-            for (u, v) in ((0, 1), (1, 3), (3, 2), (2, 0)):
-                faces.append((a + u, a + v, b + v, b + u))
-    faces.append((0, 2, 3, 1))
-    n = len(pts) - 1
-    faces.append((n * 4, n * 4 + 1, n * 4 + 3, n * 4 + 2))
-    ob = make_mesh(name, verts, faces)
-    ob.data.materials.append(mat)
-    for p in ob.data.polygons: p.use_smooth = False
-    bind_bone(ob, bone)
-    return ob
-
-knot_c, knot_n = front_point(0.0, NAVEL - 0.05)
-knot_c[1] -= 0.035
-bpy.ops.mesh.primitive_uv_sphere_add(segments=12, ring_count=8, radius=0.045, location=tuple(knot_c))
-knot = bpy.context.active_object; knot.name = 'SashKnot'; knot.scale = (1.0, 0.6, 0.75)
-knot.data.materials.append(sash_mat)
-bpy.ops.object.transform_apply(scale=True)
-bind_bone(knot, 'pelvis')
-for k, (dx, ang) in enumerate(((-0.025, -0.06), (0.03, 0.08))):
-    pts = []
-    for i in range(7):
-        t = i / 6
-        pts.append((knot_c[0] + dx + ang * t, knot_c[1] - 0.005 - 0.03 * t * t, knot_c[2] - 0.02 - 0.42 * t))
-    add_box_chain(f'SashTail{k}', pts, [0.075 - 0.01 * (i / 6) for i in range(7)], 0.012, sash_mat, 'pelvis')
-
-# ---- Fingerless gloves and red wrist cuffs ----
-hand_w = wsum('hand_l', 'hand_r')
-fing1 = wsum(*[f'{n}_01_{s}' for n in ('index', 'middle', 'ring', 'pinky') for s in 'lr'])
-thumb1 = wsum('thumb_01_l', 'thumb_01_r')
-def glove_face(f):
-    f = list(f)
-    return (hand_w[f] + 0.6 * fing1[f] + 0.5 * thumb1[f]).min() > 0.45
-shell('Glove', glove_face, lambda idx: np.full(len(idx), 0.0035), material('Glove', srgb(0x161618)))
-for s in 'lr':
-    hj = J[f'joint-{s}-hand']; ej = J[f'joint-{s}-elbow']
-    axis = (hj - ej) / np.linalg.norm(hj - ej)
-    t = (BV - ej) @ axis / np.linalg.norm(hj - ej)
-    lw = W[f'lowerarm_{s}'] + W[f'hand_{s}']
-    def cuff_face(f, t=t, lw=lw):
-        f = list(f); return (t[f].min() > 0.8) and (t[f].max() < 1.0) and lw[f].min() > 0.5
-    shell(f'Cuff_{s}', cuff_face, lambda idx: np.full(len(idx), 0.009), material('Band', srgb(0xb3202a)))
-
-# ---- Ankle wraps and closed black shoes ----
-foot_w = wsum('foot_l', 'foot_r', 'ball_l', 'ball_r')
-calf_w = wsum('calf_l', 'calf_r')
-def wrap_face(f):
-    f = list(f); return z[f].min() > ANK - 0.015 and z[f].max() < PANT_BOT + 0.02 and (calf_w[f] + foot_w[f]).min() > 0.5
-shell('Wrap', wrap_face, lambda idx: np.full(len(idx), 0.008), material('Wrap', srgb(0xd8c7a3)))
-# Shoes are lofted around each foot rather than shrink-wrapped, so the toes
-# disappear into one rounded toe box with a flat sole.
-SHOE_OFF = 0.007
-shoe_m = material('Shoe', srgb(0x121212))
-for s_ in 'lr':
-    sg = 1 if s_ == 'l' else -1
-    fi = np.where((foot_w > 0.5) & (z < ANK + 0.03) & (np.sign(BV[:, 0]) == sg))[0]
-    FP = BV[fi]
-    y0, y1 = FP[:, 1].min(), FP[:, 1].max()      # toe tip (front is -y) .. heel
-    NS, NA = 22, 16
-    ys = np.linspace(y0 - 0.016, y1 + 0.006, NS)
-    prof = []
-    for y in ys:
-        m = np.abs(FP[:, 1] - y) < 0.012
-        if not m.any(): m = np.argsort(np.abs(FP[:, 1] - y))[:8]
-        Q = FP[m]
-        prof.append((Q[:, 0].min(), Q[:, 0].max(), Q[:, 2].max()))
-    prof = np.array(prof)
-    for _ in range(3):   # smooth the profile along the foot
-        prof[1:-1] = (prof[:-2] + 2 * prof[1:-1] + prof[2:]) / 4
-    verts, src = [], []
-    for k, (y, (xa, xb, zt)) in enumerate(zip(ys, prof)):
-        u = k / (NS - 1)
-        # Round both ends: the toe and heel sections shrink to a cap.
-        end = min(u / 0.1, (1 - u) / 0.06, 1.0)
-        shrink = np.sqrt(max(0.0, 1 - (1 - end) ** 2))
-        cx, hw = (xa + xb) / 2, (xb - xa) / 2 + SHOE_OFF
-        ht = zt + SHOE_OFF
-        for j in range(NA):
-            t = 2 * np.pi * j / NA
-            c, sn = np.cos(t), np.sin(t)
-            ex = np.sign(c) * abs(c) ** 0.6 * hw * max(shrink, 0.5)
-            if sn >= 0:   # upper: superellipse dome
-                ez = abs(sn) ** 0.7 * ht * max(shrink, 0.55) + 0.0
-            else:         # sole: flat, with a slight bevel
-                ez = -abs(sn) ** 3 * 0.003
-            p = np.array([cx + ex, y, max(0.0, ez + 0.003)])
-            verts.append(p)
-            src.append(fi[np.argmin(((FP - p) ** 2).sum(1))])
-    faces = []
-    for k in range(NS - 1):
-        for j in range(NA):
-            a0, a1 = k * NA + j, k * NA + (j + 1) % NA
-            faces.append((a0, a1, a1 + NA, a0 + NA))
-    for k, sgn_ in ((0, 1), (NS - 1, -1)):   # end caps
-        ci = len(verts); verts.append(np.mean(verts[k * NA:(k + 1) * NA], axis=0))
-        src.append(src[k * NA])
-        for j in range(NA):
-            f = (ci, k * NA + j, k * NA + (j + 1) % NA)
-            faces.append(f if sgn_ > 0 else f[::-1])
-    ob = make_mesh(f'Shoe_{s_}', [tuple(v) for v in verts], faces)
-    # Outward normals: flip if the first side face points into the foot.
-    me = ob.data
-    pc = np.array(me.polygons[NA // 4].center); n = np.array(me.polygons[NA // 4].normal)
-    if np.dot(n, pc - np.array([prof[0][0] / 2 + prof[0][1] / 2, ys[0], 0.03])) < 0: me.flip_normals()
-    for poly in me.polygons: poly.use_smooth = True
-    ob.data.materials.append(shoe_m)
-    bind(ob, src_index=src)
+# ---- Clothing (per character, see characters.py) ----
+exec(open(os.path.join(HERE, 'outfit.py')).read())
 
 # ---- Eyes: flat anime eyes painted on a smoothed eye area ----
 # The realistic sockets are filled in with a smooth surface, then the eye is
@@ -196,7 +80,7 @@ def group_verts(g):
         if gg == g: s.update(f)
     return B[sorted(s)]
 eye_white = material('EyeWhite', srgb(0xf4f1ea))
-iris_m = material('Iris', srgb(0x2c3b56))
+iris_m = material('Iris', col('Iris', 0x2c3b56))
 pupil_m = material('Pupil', srgb(0x05070c))
 hi_m = material('Highlight', srgb(0xffffff))
 lash_m = material('Lash', srgb(0x0d0b0a))
@@ -246,12 +130,13 @@ def on_face(x, zz, off):
     return np.array(loc) + np.array(n) * off
 
 # Fierce male shape: the upper lid slants down toward the nose.
+EP = C['eyes']
 def upper(t):
     t = np.clip(t, 0, 1)
-    return -0.0025 + 0.0065 * t + 0.0074 * np.sin(np.pi * t ** 0.8) ** 0.6
+    return -0.0025 * EP['slant'] + 0.0065 * EP['slant'] * t + 0.0074 * EP['h'] * np.sin(np.pi * t ** 0.8) ** 0.6
 def lower(t):
     t = np.clip(t, 0, 1)
-    return -0.0025 + 0.0035 * t - 0.0052 * np.sin(np.pi * t) ** 0.9
+    return -0.0025 * EP['slant'] + 0.0035 * EP['slant'] * t - 0.0052 * EP['h'] * np.sin(np.pi * t) ** 0.9
 U0, U1 = -0.017, 0.019
 def uat(t): return U0 + (U1 - U0) * t
 EYE_POLY = [(uat(t), upper(t)) for t in np.linspace(0, 1, 17)] + [(uat(t), lower(t)) for t in np.linspace(1, 0, 17)[1:-1]]
@@ -327,8 +212,8 @@ for s in 'lr':
     sgn = EYE[s][0]
     white = ccw(EYE_POLY)
     disc(f'EyeWhite_{s}', s, white, 0.0010, eye_white)
-    disc(f'Iris_{s}', s, ccw(clip(ccw(ellipse(0.0012, 0.0006, 0.0068, 0.0095)), white)), 0.0014, iris_m)
-    disc(f'Pupil_{s}', s, ccw(clip(ccw(ellipse(0.0012, 0.0004, 0.0028, 0.0044)), white)), 0.0017, pupil_m)
+    disc(f'Iris_{s}', s, ccw(clip(ccw(ellipse(0.0012, 0.0006, 0.0068 * EP['iris'], 0.0095 * EP['iris'])), white)), 0.0014, iris_m)
+    disc(f'Pupil_{s}', s, ccw(clip(ccw(ellipse(0.0012, 0.0004, 0.0028 * EP['iris'], 0.0044 * EP['iris'])), white)), 0.0017, pupil_m)
     # Highlights: same world side on both eyes (one key light).
     hu = -0.0025 * sgn
     disc(f'Highlight_{s}', s, ccw(ellipse(0.0012 + hu, 0.0032, 0.0016, 0.0018, 12)), 0.0020, hi_m)
@@ -337,11 +222,12 @@ for s in 'lr':
     ts = np.linspace(0, 1, 18)
     top, bot = [], []
     for t in ts:
-        th = 0.0011 + 0.0028 * t ** 1.2
+        th = (0.0011 + 0.0028 * t ** 1.2) * (1.25 if C['female'] else 1.0)
         top.append((uat(t), upper(t) + th)); bot.append((uat(t), upper(t) - 0.0005))
-    for k, w in enumerate((0.0016, 0.0033, 0.005)):
-        top.append((U1 + w, upper(1) + 0.0029 - 0.0011 * (k + 1)))
-        bot.append((U1 + w * 0.9, upper(1) - 0.0009 - 0.0004 * k))
+    for k, w in enumerate((0.0024, 0.005, 0.0078) if C['female'] else (0.0016, 0.0033, 0.005)):
+        rise = 0.0009 if C['female'] else -0.0011      # female lashes flick up
+        top.append((U1 + w, upper(1) + 0.0029 + rise * (k + 1)))
+        bot.append((U1 + w * 0.9, upper(1) - 0.0009 + (rise + 0.0007) * k))
     strip(f'Lash_{s}', s, top, bot, 0.0021, lash_m)
     # Lower lid line on the outer half.
     ts = np.linspace(0.5, 1, 9)
@@ -354,8 +240,8 @@ for s in 'lr':
     for i in range(8):
         t = i / 7
         x = sgn * (0.009 + 0.05 * t)
-        zb = ez + 0.0055 + 0.019 * t - 0.005 * t * t
-        w = 0.0065 * (1 - t) ** 0.7 + 0.0015
+        zb = ez + 0.0055 + 0.0035 * (1 - EP['brow_slope']) + (0.019 * t - 0.005 * t * t) * EP['brow_slope']
+        w = (0.0065 * (1 - t) ** 0.7 + 0.0015) * EP['brow']
         top.append(on_face(x, zb + w, 0.0025)); bot.append(on_face(x, zb, 0.0025))
     verts = top + bot
     faces = [(k, k + 1, 8 + k + 1, 8 + k) for k in range(7)]

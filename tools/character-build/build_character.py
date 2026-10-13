@@ -9,38 +9,11 @@ from mhbody import build, joint_centers, MH
 OUT = sys.argv[sys.argv.index('--') + 1] if '--' in sys.argv else os.environ.get('CHAR_OUT', 'out')
 STAGE = sys.argv[sys.argv.index('--') + 2] if '--' in sys.argv and len(sys.argv) > sys.argv.index('--') + 2 else 'all'
 
-# Heroic bodybuilder: max muscle, low body fat, tall, V-taper, big arms and legs.
-TARGETS = [
-    ('caucasian-male-young', 0.4), ('asian-male-young', 0.3), ('african-male-young', 0.3),
-    ('universal-male-young-maxmuscle-minweight', 0.75),
-    ('universal-male-young-maxmuscle-averageweight', 0.25),
-    ('height', 0.15),
-    ('proportions', 1.0),
-    ('torso-vshape-incr', 0.9),
-    ('torso-muscle-dorsi-incr', 1.0),
-    ('torso-muscle-pectoral-incr', 0.9),
-    ('measure-shoulder-dist-incr', 0.5),
-    ('measure-waist-circ-decr', 0.6),
-    ('stomach-tone-incr', 1.0),
-    ('measure-upperarm-circ-incr', 1.0),
-    ('l-upperarm-scale-horiz-incr', 0.5), ('r-upperarm-scale-horiz-incr', 0.5),
-    ('l-upperarm-scale-depth-incr', 0.5), ('r-upperarm-scale-depth-incr', 0.5),
-    ('l-lowerarm-scale-horiz-incr', 0.5), ('r-lowerarm-scale-horiz-incr', 0.5),
-    ('l-lowerarm-scale-depth-incr', 0.5), ('r-lowerarm-scale-depth-incr', 0.5),
-    ('l-upperarm-muscle-incr', 1.0), ('r-upperarm-muscle-incr', 1.0),
-    ('l-upperarm-shoulder-muscle-incr', 1.0), ('r-upperarm-shoulder-muscle-incr', 1.0),
-    ('l-lowerarm-muscle-incr', 1.0), ('r-lowerarm-muscle-incr', 1.0),
-    ('l-upperleg-muscle-incr', 1.0), ('r-upperleg-muscle-incr', 1.0),
-    ('l-lowerleg-muscle-incr', 0.5), ('r-lowerleg-muscle-incr', 0.5),
-    ('measure-thigh-circ-incr', 0.4),
-    ('measure-calf-circ-incr', 0.2),
-    ('measure-neck-circ-incr', 0.8),
-    ('head-square', 0.35),
-    ('chin-width-incr', 0.3),
-    ('chin-prominent-incr', 0.3),
-    ('l-eye-scale-incr', 0.7), ('r-eye-scale-incr', 0.7),
-    ('l-eye-height2-incr', 0.8), ('r-eye-height2-incr', 0.8),
-]
+from characters import CHARACTERS
+CHAR = os.environ.get('CHAR', 'rokan')
+C = CHARACTERS[CHAR]
+TARGETS = C['targets']
+BUILD_HEIGHT = 1.8369  # every body is built at Rokan's height; the game scales it
 
 def reset():
     bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -72,6 +45,10 @@ def material(name, color):
         bsdf.inputs['Roughness'].default_value = 0.7
     return m
 
+def col(name, default):
+    """Linear color for a material: the character's default, else `default`."""
+    return srgb(C['colors'].get(name, default))
+
 def srgb(h):
     c = [((h >> 16) & 255) / 255, ((h >> 8) & 255) / 255, (h & 255) / 255]
     return tuple((x / 12.92) if x <= 0.04045 else ((x + 0.055) / 1.055) ** 2.4 for x in c)
@@ -79,10 +56,11 @@ def srgb(h):
 # ---------------------------------------------------------------------------
 reset()
 B, UV, F, FUV, FG = build(TARGETS)
+B *= BUILD_HEIGHT / B[:13380, 2].max()
 J = joint_centers(B, F, FG)
 NB = 13380
 from sculpt import sculpt_bodybuilder
-B = sculpt_bodybuilder(B, [f for f, g in zip(F, FG) if g == 'body'], J, NB)
+B = sculpt_bodybuilder(B, [f for f, g in zip(F, FG) if g == 'body'], J, NB, amp=C['muscle'], female=C['female'])
 body_f = [(f, fu) for f, fu, g in zip(F, FUV, FG) if g == 'body']
 body = make_mesh('Body', B[:NB].tolist(), [f for f, _ in body_f], [fu for _, fu in body_f], UV)
 body.data.materials.append(material('Skin', srgb(0xc8875a)))
@@ -90,7 +68,7 @@ body.data.materials.append(material('Skin', srgb(0xc8875a)))
 # ---- Armature (MakeHuman game-engine skeleton, Unreal-style bone names) ----
 rig = json.load(open(f'{MH}/rig.game_engine.json'))
 arm_data = bpy.data.armatures.new('Rig')
-arm = bpy.data.objects.new('Rokan', arm_data)
+arm = bpy.data.objects.new(CHAR.capitalize(), arm_data)
 bpy.context.scene.collection.objects.link(arm)
 bpy.context.view_layer.objects.active = arm
 bpy.ops.object.mode_set(mode='EDIT')
@@ -148,5 +126,5 @@ exec(open(os.path.join(HERE, 'parts.py')).read()) if STAGE != 'body' else None
 
 if STAGE in ('all', 'bake'):
     exec(open(os.path.join(HERE, 'bake.py')).read())
-bpy.ops.wm.save_as_mainfile(filepath=f'{OUT}/rokan.blend')
+bpy.ops.wm.save_as_mainfile(filepath=f'{OUT}/{CHAR}.blend')
 print('BODY verts', len(body.data.vertices), 'height', B[:NB, 2].max())

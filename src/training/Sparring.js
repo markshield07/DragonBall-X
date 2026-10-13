@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { PowerUpFX } from '../fx/PowerUpFX.js';
 import { bus } from '../core/events.js';
 import { rand, damp } from '../core/math.js';
 import { createAvatar } from '../character/createAvatar.js';
@@ -10,7 +11,7 @@ import { glowMaterial } from '../render/toon.js';
 // Sparring partner difficulty. Higher levels attack faster, block and dodge
 // more, hit harder and give more XP. Master sparring partners go Super Saiyan.
 export const SPAR_LEVELS = [
-  { id: 'easy', name: 'Easy', template: 'ryuzen', hp: 160, damage: 3, windup: 1.0, cooldown: 2.4, block: 0.1, dodge: 0.05, blast: 0.15, xp: 1, form: 'base' },
+  { id: 'easy', name: 'Easy', template: 'zyra', hp: 160, damage: 3, windup: 1.0, cooldown: 2.4, block: 0.1, dodge: 0.05, blast: 0.15, xp: 1, form: 'base' },
   { id: 'normal', name: 'Normal', template: 'kaizen', hp: 240, damage: 5, windup: 0.8, cooldown: 1.7, block: 0.25, dodge: 0.15, blast: 0.25, xp: 1.4, form: 'base' },
   { id: 'hard', name: 'Hard', template: 'vexar', hp: 340, damage: 8, windup: 0.62, cooldown: 1.15, block: 0.4, dodge: 0.3, blast: 0.3, xp: 1.9, form: 'base' },
   { id: 'master', name: 'Master', template: 'toren', hp: 480, damage: 11, windup: 0.5, cooldown: 0.85, block: 0.5, dodge: 0.42, blast: 0.35, xp: 2.6, form: 'ssj1' },
@@ -81,7 +82,7 @@ export class Sparring {
       ch = { ...this.game.character, skin: 9, hairColor: 0, eyeColor: 6, armorColor: 1, suitColor: 2, gloveColor: 2, bootColor: 1, beltColor: 0 };
     } else {
       const t = CHARACTER_TEMPLATES.find((x) => x.id === this.level.template) || CHARACTER_TEMPLATES[0];
-      ch = { ...defaultCharacter(), ...t.appearance };
+      ch = { ...defaultCharacter(), ...t.appearance, templateId: t.id };
     }
     this.avatar = createAvatar(ch);
     this.group.add(this.avatar.root);
@@ -104,9 +105,9 @@ export class Sparring {
   reset() {
     this.maxHealth = this.level.hp * (this.shadow ? 1.4 : 1);
     this.health = this.maxHealth;
-    this.state = 'idle';
-    this.timer = 0.5;
-    this.cooldown = 2;
+    this.state = 'powerUp';
+    this.timer = 1.8;
+    this.cooldown = 2.5;
     this.knock.set(0, 0, 0);
     this.group.position.set(0, this.player.groundY(), -2.4);
     this.wounds?.reset();
@@ -211,6 +212,7 @@ export class Sparring {
     const guardR = new THREE.Vector3(-0.14, 1.36, 0.34);
     const a = this.avatar;
     const pose = (l, r) => {
+      a.clearPowerUp();
       a.arms.left.target.lerp(l, Math.min(1, dt * 14));
       a.arms.right.target.lerp(r, Math.min(1, dt * 14));
       a.head.quaternion.identity();
@@ -219,6 +221,19 @@ export class Sparring {
     const breathe = Math.sin(performance.now() * 0.004) * 0.015;
     a.root.rotation.x = 0;
     switch (this.state) {
+      case 'powerUp': {
+        // Opens each round Dragon Ball style: crouch, clench, yell, aura flares.
+        this.powerTime = (this.powerTime || 0) + dt;
+        const k = Math.min(1, (1.8 - this.timer) * 3, this.timer * 4);
+        a.powerUpPose(this.powerTime, Math.max(0.2, k));
+        this.powerFx ||= new PowerUpFX(g.renderer.scene, g.effects);
+        this.aura.target = Math.max(this.aura.target, 0.9 * k);
+        if (this.timer <= 0) {
+          this.aura.target = this.level.form === 'base' && !this.shadow ? 0 : 0.7;
+          this.enter('idle', 0.3);
+        }
+        break;
+      }
       case 'idle':
       case 'approach': {
         pose(guardL.clone().setY(1.42 + breathe), guardR.clone().setY(1.36 + breathe));
@@ -293,8 +308,8 @@ export class Sparring {
           a.root.position.y = 0;
           this.health = this.maxHealth;
           this.wounds.reset();
-          this.cooldown = 1.5;
-          this.enter('idle', 0.5);
+          this.cooldown = 2.2;
+          this.enter('powerUp', 1.8);
           bus.emit('hud:message', { text: 'Your partner gets back up. Round ' + (this.wins + 1) + '!', color: '#ffcc33' });
         }
         break;
@@ -302,6 +317,7 @@ export class Sparring {
       default: break;
     }
     if (this.state !== 'down') a.root.position.y = 0;
+    if (this.powerFx) this.powerFx.update(dt, this.group.position, this.state === 'powerUp' ? 0.8 * g.visualIntensity : 0, this.shadow ? 0x9a6aff : 0xdcc9a8);
     const r = Math.hypot(pos.x, pos.z);
     if (r > 25) { pos.x *= 25 / r; pos.z *= 25 / r; }
     this.aura.update(dt, g.renderer.camera, g.visualIntensity * 0.6);

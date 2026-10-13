@@ -138,7 +138,14 @@ export class Mirror {
     // camera looks -Z; avatar head looks +Z -> rotate 180 about Y
     headLocal.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI));
     // Player's left hand -> avatar's left arm (avatar left is +X in its local space)
-    this.avatar.setPose(L.group.visible ? toLocal(L.worldPos) : null, R.group.visible ? toLocal(R.worldPos) : null, headLocal);
+    // Powering up or transforming: the reflection strikes the Dragon Ball power-up stance.
+    const tr = g.transformation;
+    if (tr && (tr.state === 'charging' || tr.state === 'transforming')) {
+      this.powerTime = (this.powerTime || 0) + dt;
+      this.avatar.powerUpPose(this.powerTime, tr.state === 'transforming' ? 1 : 0.55 + 0.45 * tr.charge);
+    } else {
+      this.avatar.setPose(L.group.visible ? toLocal(L.worldPos) : null, R.group.visible ? toLocal(R.worldPos) : null, headLocal);
+    }
     // Aura mirrors the player's aura
     const pa = g.playerAura;
     this.aura.target = pa.target;

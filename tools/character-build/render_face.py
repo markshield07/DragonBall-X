@@ -1,10 +1,14 @@
 # Face close-ups (front and three-quarter) for iterating on the eyes.
-import bpy, sys
+import bpy, sys, os
+CHAR = os.environ.get('CHAR', 'rokan')
 from mathutils import Vector
 OUT = sys.argv[sys.argv.index('--') + 1]
 TAG = sys.argv[sys.argv.index('--') + 2]
-bpy.ops.wm.open_mainfile(filepath=f'{OUT}/rokan.blend')
+bpy.ops.wm.open_mainfile(filepath=f'{OUT}/{CHAR}.blend')
 sc = bpy.context.scene
+# Show the base form only (the SSJ hair and fur meshes overlap it).
+for o in bpy.data.objects:
+    if o.name.startswith(('HairSSJ', 'Fur')): o.hide_render = True
 sc.render.engine = 'BLENDER_WORKBENCH'
 sh = sc.display.shading
 sh.light = 'STUDIO'

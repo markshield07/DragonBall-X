@@ -16,7 +16,8 @@ def seg_dist(P, a, b):
     return np.linalg.norm(P - (a + t[:, None] * ab), axis=1)
 
 class Detailer:
-    def __init__(self, V, N):
+    def __init__(self, V, N, k=1.0):
+        self.k = k
         self.V, self.N = V, N
         self.D = np.zeros(len(V))
 
@@ -37,16 +38,16 @@ class Detailer:
         prof = np.clip(1 - (d / width) ** 2, 0, 1) ** 2
         if taper:
             prof *= np.clip(np.sin(np.pi * np.clip(tt, 0, 1)) * 1.6, 0, 1)
-        self.D[idx] -= depth * prof
+        self.D[idx] -= depth * self.k * prof
 
     def bump(self, c, r, amp, power=0.7):
         if c is None: return
         q = (self.V - c) / np.array(r)
         d2 = (q * q).sum(1)
-        self.D += amp * np.clip(1 - d2, 0, 1) ** power
+        self.D += amp * self.k * np.clip(1 - d2, 0, 1) ** power
 
-def detail_bodybuilder(V, N, J):
-    Dt = Detailer(V, N)
+def detail_bodybuilder(V, N, J, k=1.0, female=False):
+    Dt = Detailer(V, N, k)
     F = lambda x, z: surf_point(V, N, x, z, 'front')
     Bk = lambda x, z: surf_point(V, N, x, z, 'back')
     line = lambda f, xs, zs: [f(x, z) for x, z in zip(xs, zs)]
@@ -59,9 +60,11 @@ def detail_bodybuilder(V, N, J):
         X = lambda xs: [s * x for x in xs]
         Dt.groove(line(F, X([0.085, 0.088, 0.083, 0.072, 0.05]), [1.31, 1.25, 1.18, 1.11, 1.05]), 0.009, 0.0035)
         # Pectoral lower edge and the cleavage between pec and delt.
-        Dt.groove(line(F, X([0.01, 0.05, 0.10, 0.145, 0.175]), [1.33, 1.315, 1.315, 1.335, 1.38]), 0.012, 0.006)
+        if not female:
+            Dt.groove(line(F, X([0.01, 0.05, 0.10, 0.145, 0.175]), [1.33, 1.315, 1.315, 1.335, 1.38]), 0.012, 0.006)
         Dt.groove(line(F, X([0.14, 0.165, 0.185, 0.2]), [1.49, 1.45, 1.41, 1.37]), 0.01, 0.004)
-        Dt.groove(line(F, X([0.03, 0.025, 0.02]), [1.48, 1.42, 1.36]), 0.008, 0.0025)
+        if not female:
+            Dt.groove(line(F, X([0.03, 0.025, 0.02]), [1.48, 1.42, 1.36]), 0.008, 0.0025)
         # Serratus fingers
         for k in range(4):
             z0 = 1.33 - 0.03 * k

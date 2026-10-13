@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+
+const _PX = new THREE.Vector3(1, 0, 0);
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { toonUnique, addOutline, outlineExtrudeMaterial } from '../render/toon.js';
 import { buildHairGeometry, HEAD_RADIUS } from './hair.js';
@@ -409,6 +411,7 @@ export class Avatar {
 
   // Set hand targets in avatar-root space and head look rotation.
   setPose(leftLocal, rightLocal, headQuatLocal) {
+    this.clearPowerUp();
     const k = 1 / this.body.scale.x;
     if (leftLocal) this.arms.left.target.copy(leftLocal).multiplyScalar(k);
     if (rightLocal) this.arms.right.target.copy(rightLocal).multiplyScalar(k);
@@ -416,8 +419,25 @@ export class Avatar {
     this.poseArms();
   }
 
+  // Dragon Ball power-up: fists clenched low at the hips, head back, shaking.
+  powerUpPose(t, k = 1) {
+    const a = this.arms;
+    const jx = Math.sin(t * 61) * 0.008 * k, jy = Math.cos(t * 47) * 0.008 * k;
+    a.left.target.set(a.left.shoulder.x * 1.15 + jx, 0.98 + jy, 0.1);
+    a.right.target.set(a.right.shoulder.x * 1.15 - jx, 0.98 - jy, 0.1);
+    this.head.quaternion.setFromAxisAngle(_PX, -0.2 * k);
+    this.body.position.set(Math.sin(t * 73) * 0.006 * k, -0.03 * k, Math.cos(t * 59) * 0.005 * k);
+    this.poweredUp = true;
+    this.poseArms();
+  }
+
+  clearPowerUp() {
+    if (this.poweredUp) { this.poweredUp = false; this.body.position.set(0, 0, 0); }
+  }
+
   // Standard battle stance: fists up in a guard, breathing.
   restPose(t = 0) {
+    this.clearPowerUp();
     const breathe = Math.sin(t * 2) * 0.012;
     const a = this.arms;
     a.left.target.set(a.left.shoulder.x * 0.6, 1.38 + breathe, 0.4);

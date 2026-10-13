@@ -358,6 +358,7 @@ export class Game {
   togglePreviewForm() {
     const forms = FORM_ORDER.filter((id) => FORMS[id].playable);
     this.previewForm = forms[(forms.indexOf(this.previewForm) + 1) % forms.length];
+    this.previewPower = 1.4;
     this.previewAvatar?.setForm(this.previewForm);
   }
 
@@ -807,7 +808,11 @@ export class Game {
     if (!this.previewAvatar || this.state !== 'creator') return;
     this.previewSpin = (this.previewSpin || 0) + dt * 0.6;
     this.previewAvatar.root.rotation.y = this.previewAvatarBaseYaw + Math.sin(this.previewSpin) * 1.2;
-    this.previewAvatar.restPose(this.previewSpin * 2);
+    // Each new form in the preview starts with a short power-up.
+    if (this.previewPower > 0) {
+      this.previewPower -= dt;
+      this.previewAvatar.powerUpPose(this.previewSpin * 2, Math.min(1, this.previewPower * 2));
+    } else this.previewAvatar.restPose(this.previewSpin * 2);
   }
 }
 

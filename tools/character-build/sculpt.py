@@ -18,7 +18,8 @@ def smooth01(x):
     return x * x * (3 - 2 * x)
 
 class Sculptor:
-    def __init__(self, V, faces, J):
+    def __init__(self, V, faces, J, k=1.0):
+        self.k = k  # overall muscle size (1 = Rokan)
         self.V = V
         self.faces = faces
         self.J = {k: np.array(v) for k, v in J.items()}
@@ -43,7 +44,7 @@ class Sculptor:
         w = np.clip(1 - d2, 0, 1) ** power * self.facing(face)
         if mask is not None:
             w = w * mask
-        self.D += (amp * w)[:, None] * self.N if np.ndim(amp) == 0 else 0
+        self.D += (amp * self.k * w)[:, None] * self.N
 
     def along(self, a, b, t0, t1, radius, amp, face=None, power=1.5, peak=0.5):
         """Spindle-shaped muscle along the segment a->b between t0 and t1."""
@@ -57,23 +58,24 @@ class Sculptor:
         prof = np.where(u < peak, np.sin(np.pi / 2 * u / peak), np.sin(np.pi / 2 * (1 - u) / (1 - peak)))
         prof = np.where((t > t0) & (t < t1), prof, 0) ** power
         w = prof * smooth01(1.3 - rad / radius) * self.facing(face)
-        self.D += (amp * w)[:, None] * self.N
+        self.D += (amp * self.k * w)[:, None] * self.N
 
     def apply(self):
         self.V += self.D
         return self.V
 
-def sculpt_bodybuilder(V, faces, J, nb):
+def sculpt_bodybuilder(V, faces, J, nb, amp=1.0, female=False):
     """V: all vertices (only the first nb are the body)."""
-    S = Sculptor(V[:nb].copy(), faces, J)
+    S = Sculptor(V[:nb].copy(), faces, J, amp)
     for s in (1, -1):
         X = lambda p: np.array([p[0] * s, p[1], p[2]])
         L = lambda n: S.J[n.replace('-l-', '-l-' if s == 1 else '-r-')]
         sh, el, hd = L('joint-l-shoulder'), L('joint-l-elbow'), L('joint-l-hand')
         hip, kn, an = L('joint-l-upper-leg'), L('joint-l-knee'), L('joint-l-ankle')
         # Pectorals: big plates, fuller toward the arm, a hard lower edge.
-        S.blob(X([0.095, -0.12, 1.38]), (0.11, 0.09, 0.075), 0.022, face=(0.2 * s, -1, 0.1), power=1.2)
-        S.blob(X([0.13, -0.10, 1.40]), (0.07, 0.07, 0.06), 0.010, face=(0.5 * s, -1, 0), power=1.5)
+        if not female:
+            S.blob(X([0.095, -0.12, 1.38]), (0.11, 0.09, 0.075), 0.022, face=(0.2 * s, -1, 0.1), power=1.2)
+            S.blob(X([0.13, -0.10, 1.40]), (0.07, 0.07, 0.06), 0.010, face=(0.5 * s, -1, 0), power=1.5)
         # Deltoids: three heads capping the shoulder.
         S.blob(sh + np.array([0.035 * s, -0.035, 0.0]), (0.08, 0.07, 0.09), 0.027, face=(0.3 * s, -1, 0.2))
         S.blob(sh + np.array([0.05 * s, 0.0, -0.01]), (0.08, 0.08, 0.10), 0.032, face=(1 * s, 0, 0.3))

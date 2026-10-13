@@ -1,29 +1,36 @@
 # Character build pipeline (Blender, headless)
 
-Builds `public/models/characters/rokan.glb`: a rigged, anime-styled 3D Rokan
+Builds `public/models/characters/{id}.glb` for the six playable characters
+(rokan, kaizen, vexar, toren, zyra, zeron): rigged, anime-styled 3D bodies
 with clothing, eyes, brows and one hair mesh per transformation
 (`Hair`, `HairSSJ`, `HairSSJ3`, `HairSSJ4`) plus the SSJ4 `Fur` layer.
 The game swaps them by material name in `src/character/ModelAvatar.js`.
+
+Pick the character with `CHAR` (default `rokan`). Per-character body targets,
+muscle, outfit pieces, hairstyle, eye shape and default colors live in
+`characters.py`; clothing pieces are in `outfit.py`, hairstyles in `hair.py`.
+Every body is built at Rokan's height so shared landmarks line up; the game
+scales each model to its real height (`MODELS` in `src/character/ModelAvatar.js`).
 
 ## Steps
 1. `mhbody.py` loads the MakeHuman base mesh and applies MPFB2 morph targets
    (male, young, max muscle, broad shoulders, V-taper).
 2. `sculpt.py` adds bodybuilder muscle masses (pecs, delts, arms, lats, abs, legs).
-3. `build_rokan.py` makes the armature (Unreal-style "game_engine" rig) and skins it.
-4. `parts.py` / `hair.py` add pants, sash, wraps, sandals, fur, eyes, brows and hair.
+3. `build_character.py` makes the armature (Unreal-style "game_engine" rig) and skins it.
+4. `parts.py` / `hair.py` add the outfit, fur, eyes, brows and hair.
 5. `bake.py` subdivides a copy, carves muscle grooves (`detail.py`) and bakes
    a tangent-space normal map onto the game mesh.
 6. `export.py` joins everything and writes the GLB.
 
 ```sh
-PY=/path/to/python-with-bpy MH_ASSETS=assets/mh MH_TARGETS=targets CHAR_OUT=out \
+PY=/path/to/python-with-bpy MH_ASSETS=assets/mh MH_TARGETS=targets CHAR_OUT=out CHAR=kaizen \
   sh tools/character-build/run.sh preview all
-$PY -c "import sys; sys.argv=['x','--','out']; exec(open('tools/character-build/export.py').read())"
-cp out/rokan.glb public/models/characters/rokan.glb
+CHAR=kaizen $PY -c "import sys; sys.argv=['x','--','out']; exec(open('tools/character-build/export.py').read())"
+cp out/kaizen.glb public/models/characters/kaizen.glb
 ```
 
 `MH_ASSETS` needs `base.obj`, `rig.game_engine.json` and `weights.game_engine.json`;
-`MH_TARGETS` needs the `.target.gz` files named in `build_rokan.py`. Both come from
+`MH_TARGETS` needs the `.target.gz` files named in `characters.py` (the female characters also need the `*-female-young` targets). Both come from
 https://github.com/makehumancommunity/mpfb2 (`src/mpfb/data`).
 
 ## Credits

@@ -3,7 +3,9 @@ import { bus } from '../core/events.js';
 import { clamp, rand } from '../core/math.js';
 import { FORMS, nextForm } from '../progression/forms.js';
 import { Lightning } from '../fx/Effects.js';
+import { PowerUpFX } from '../fx/PowerUpFX.js';
 
+const _c = new THREE.Vector3();
 const BURST_AT = 1.05; // seconds into the sequence when the burst happens
 const SEQUENCE_LEN = 2.6;
 
@@ -288,6 +290,15 @@ export class Transformation {
         }
       });
     }
+
+    // Rocks float up around the fighter and dust rings pulse while powering up.
+    this.powerFx ||= new PowerUpFX(g.renderer.scene, g.effects);
+    const head = p.headWorld;
+    _c.set(head.x, p.groundY(), head.z);
+    const fxLevel = this.state === 'transforming' ? 1 : charging ? 0.35 + 0.65 * c : 0;
+    this.powerFx.update(dt, _c, fxLevel * g.visualIntensity);
+    if (charging && !this.wasCharging) g.effects.crack(_c, 1.6);
+    this.wasCharging = charging;
 
     // Sound: charge hum + sustained aura
     const hum = charging ? 0.25 + 0.75 * c : this.state === 'transforming' ? 1 : 0;

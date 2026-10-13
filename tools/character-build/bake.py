@@ -1,4 +1,4 @@
-# Executed inside build_rokan.py after parts: bake a muscle-detail normal map for the skin.
+# Executed inside build_character.py after parts: bake a muscle-detail normal map for the skin.
 import numpy as np
 from detail import detail_bodybuilder
 hi = body.copy(); hi.data = body.data.copy(); hi.name = 'BodyHigh'
@@ -15,7 +15,7 @@ n = len(me.vertices)
 V = np.zeros(n * 3); me.vertices.foreach_get('co', V); V = V.reshape(-1, 3)
 me.calc_normals_split() if hasattr(me, 'calc_normals_split') else None
 Nn = np.zeros(n * 3); me.vertices.foreach_get('normal', Nn); Nn = Nn.reshape(-1, 3)
-V2 = detail_bodybuilder(V, Nn, J)
+V2 = detail_bodybuilder(V, Nn, J, k=C['muscle'], female=C['female'])
 me.vertices.foreach_set('co', V2.reshape(-1)); me.update()
 print('HIGH verts', n)
 # Image + bake setup on the low body's Skin material

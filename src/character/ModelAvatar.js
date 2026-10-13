@@ -3,7 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { toonUnique, outlineExtrudeMaterial } from '../render/toon.js';
 import { FORMS } from '../progression/forms.js';
-import { SKIN_TONES, HAIR_COLORS, EYE_COLORS, paletteColor, buildOf } from './options.js';
+import { SKIN_TONES, HAIR_COLORS, EYE_COLORS, CHARACTER_TEMPLATES, BUILDS, paletteColor, buildOf } from './options.js';
 
 // Modeled, rigged characters loaded from GLB files (public/models/characters).
 // A ModelAvatar has the same public interface as the procedural Avatar
@@ -14,9 +14,20 @@ import { SKIN_TONES, HAIR_COLORS, EYE_COLORS, paletteColor, buildOf } from './op
 // The model faces +Z with its left side on +X, feet at y = 0, in meters.
 // Arms are posed with two-bone IK on the skeleton; the head bone follows
 // `head.quaternion` (avatar space).
+// height: real height in meters (every GLB is built 1.837 m tall).
+// colors: which customization slot recolors each outfit material; materials
+// not listed (trim, accents, sword) keep the color baked into the GLB.
+const BUILT_HEIGHT = 1.837;
+const ROKAN_COLORS = { Pants: 'armorColor', Band: 'armorColor', Wrap: 'suitColor', Glove: 'gloveColor', Shoe: 'bootColor', Sash: 'beltColor' };
 export const MODELS = {
-  rokan: { url: 'models/characters/rokan.glb', height: 1.84 },
+  rokan: { height: 1.84, colors: ROKAN_COLORS },
+  kaizen: { height: 1.8, colors: { Pants: 'armorColor', Main: 'armorColor', Under: 'suitColor', Cuff: 'gloveColor', Shoe: 'bootColor', Sash: 'beltColor' } },
+  vexar: { height: 1.66, colors: { Main: 'armorColor', Under: 'suitColor', Glove: 'gloveColor', Shoe: 'bootColor' } },
+  toren: { height: 1.8, colors: { Main: 'armorColor', Under: 'suitColor', Pants: 'suitColor', Shoe: 'bootColor', Sash: 'beltColor' } },
+  zyra: { height: 1.72, colors: { Pants: 'armorColor', Under: 'suitColor', Glove: 'gloveColor', Shoe: 'bootColor', Sash: 'beltColor', Cuff: 'beltColor' } },
+  zeron: { height: 1.95, colors: { Main: 'armorColor', Under: 'suitColor', Glove: 'gloveColor', Shoe: 'bootColor' } },
 };
+for (const [id, m] of Object.entries(MODELS)) m.url = `models/characters/${id}.glb`;
 
 const cache = new Map();
 
@@ -42,11 +53,14 @@ export function loadModel(id) {
   return cache.get(id);
 }
 
-// Which model (if any) represents this character. Other looks keep the
-// procedural avatar until their models exist.
+// Which model (if any) represents this character: the template's own model,
+// as long as the player kept its body type and outfit style. Other looks use
+// the procedural avatar.
 export function modelFor(c) {
-  if (c.templateId === 'rokan' && c.body !== 'female' && c.outfit === 'primal') return 'rokan';
-  return null;
+  const t = CHARACTER_TEMPLATES.find((x) => x.id === c.templateId);
+  if (!t || !MODELS[t.id]) return null;
+  if (c.body !== t.appearance.body || c.outfit !== t.appearance.outfit) return null;
+  return t.id;
 }
 
 let ramp = null;
@@ -66,6 +80,10 @@ const FACE_PARTS = ['EyeWhite', 'Iris', 'Pupil', 'Highlight', 'Brow', 'Lash'];
 const FORM_HAIR = { base: 'Hair', ssj1: 'HairSSJ', ssj2: 'HairSSJ', ssj3: 'HairSSJ3', ssj4: 'HairSSJ4', ssj5: 'HairSSJ' };
 const HAIR_PARTS = ['Hair', 'HairSSJ', 'HairSSJ3', 'HairSSJ4'];
 const FINGERS = ['index', 'middle', 'ring', 'pinky'];
+const POWER_BONES = ['spine_02', 'thigh_l', 'thigh_r', 'calf_l', 'calf_r', 'foot_l', 'foot_r'];
+const _X = new THREE.Vector3(1, 0, 0);
+const _pq = new THREE.Quaternion();
+const _eu = new THREE.Euler();
 
 const _q = new THREE.Quaternion();
 const _q2 = new THREE.Quaternion();
@@ -156,6 +174,7 @@ export class ModelAvatar {
     const basic = FACE_PARTS.includes(name);
     const m = basic ? new THREE.MeshBasicMaterial({ color: 0xffffff }) : toonUnique(0xffffff);
     m.name = name;
+    if (src?.color) m.color.copy(src.color);
     if (name === 'Skin') {
       // Baked muscle detail plus a softer ramp, so the anatomy reads under cel shading.
       if (src?.normalMap) {
@@ -264,7 +283,10 @@ export class ModelAvatar {
       d = Math.max(d, Math.abs(l1 - l2) + 0.01);
       const dir = toT.clone().normalize();
       // Elbow bends outward, down and back, like the procedural rig.
-      _pole.set(a.s * 0.6, -0.8, -0.4).normalize();
+      // Powering up flares the elbows out and back instead.
+      if (this.power > 0) _pole.set(a.s * 0.9, -0.2 * (1 - this.power) - 0.3, -0.7);
+      else _pole.set(a.s * 0.6, -0.8, -0.4);
+      _pole.normalize();
       const x = (l1 * l1 - l2 * l2 + d * d) / (2 * d);
       const h = Math.sqrt(Math.max(l1 * l1 - x * x, 0));
       const perp = _pole.sub(dir.clone().multiplyScalar(_pole.dot(dir))).normalize();
@@ -288,6 +310,7 @@ export class ModelAvatar {
   }
 
   setPose(leftLocal, rightLocal, headQuatLocal) {
+    this.clearPowerUp();
     const k = 1 / this.body.scale.x;
     if (leftLocal) this.arms.left.target.copy(leftLocal).multiplyScalar(k);
     if (rightLocal) this.arms.right.target.copy(rightLocal).multiplyScalar(k);
@@ -297,6 +320,7 @@ export class ModelAvatar {
 
   // Guard stance with breathing.
   restPose(t = 0) {
+    this.clearPowerUp();
     const breathe = Math.sin(t * 2) * 0.012;
     const a = this.arms;
     a.left.target.set(0.2, 1.36 + breathe, 0.36);
@@ -306,20 +330,59 @@ export class ModelAvatar {
   }
 
   // ---- Look --------------------------------------------------------------------------
+  // Dragon Ball power-up: knees bent, chest out, fists clenched low at the
+  // hips with the elbows flared, head thrown back yelling, whole body shaking.
+  // k: 0..1 intensity (call every frame while powering up).
+  powerUpPose(t, k = 1) {
+    this.power = Math.max(0.001, k);
+    if (this.ready) this.poseBody(t, k);
+    const a = this.arms;
+    const jx = Math.sin(t * 61) * 0.008 * k, jy = Math.cos(t * 47) * 0.008 * k;
+    a.left.target.set(0.27 + jx, 0.98 + jy, 0.1);
+    a.right.target.set(-0.27 - jx, 0.98 - jy, 0.1);
+    this.head.quaternion.setFromAxisAngle(_X, -0.2 * k);
+    this.poseArms();
+  }
+
+  poseBody(t, k) {
+    const b = this.bones;
+    for (const n of POWER_BONES) if (b[n]) b[n].quaternion.copy(this.rest.get(b[n]));
+    this.model.updateMatrixWorld(true);
+    // Chest out and back.
+    if (b.spine_02) this.rotateRel(b.spine_02, _pq.setFromAxisAngle(_X, -0.14 * k));
+    // Knees bend into a wide horse stance; feet stay flat.
+    for (const s of ['l', 'r']) {
+      const sgn = s === 'l' ? 1 : -1;
+      if (b[`thigh_${s}`]) this.rotateRel(b[`thigh_${s}`], _pq.setFromEuler(_eu.set(-0.42 * k, 0, 0.1 * k * sgn)));
+      if (b[`calf_${s}`]) this.rotateRel(b[`calf_${s}`], _pq.setFromAxisAngle(_X, 0.8 * k));
+      if (b[`foot_${s}`]) this.rotateRel(b[`foot_${s}`], _pq.setFromEuler(_eu.set(-0.38 * k, 0, -0.1 * k * sgn)));
+    }
+    // Drop the body so the feet stay on the ground, and shake.
+    const sc = this.body.scale.x;
+    this.body.position.set(Math.sin(t * 73) * 0.006 * k, -0.07 * k * sc + Math.abs(Math.sin(t * 37)) * 0.004 * k, Math.cos(t * 59) * 0.005 * k);
+  }
+
+  clearPowerUp() {
+    if (!this.power) return;
+    this.power = 0;
+    this.body.position.set(0, 0, 0);
+    if (!this.ready) return;
+    for (const n of POWER_BONES) if (this.bones[n]) this.bones[n].quaternion.copy(this.rest.get(this.bones[n]));
+  }
+
   apply(character) {
     this.character = { ...character };
     const c = this.character;
-    const scale = buildOf(c).height / 1.02;
-    this.body.scale.setScalar(THREE.MathUtils.clamp(scale, 0.9, 1.08));
+    // The model's own height, nudged by the build preset relative to the template's.
+    const model = MODELS[this.modelId];
+    const t = CHARACTER_TEMPLATES.find((x) => x.id === this.modelId);
+    const base = BUILDS.find((b) => b.id === t?.appearance.build)?.height ?? 1;
+    const nudge = THREE.MathUtils.clamp(buildOf(c).height / base, 0.9, 1.1);
+    this.body.scale.setScalar((model.height / BUILT_HEIGHT) * nudge);
     if (!this.ready) return;
     const set = (name, hex) => this.mats[name]?.color.setHex(hex);
     set('Skin', SKIN_TONES[c.skin % SKIN_TONES.length].color);
-    set('Pants', paletteColor(c.armorColor));
-    set('Band', paletteColor(c.armorColor));
-    set('Wrap', paletteColor(c.suitColor));
-    set('Glove', paletteColor(c.gloveColor));
-    set('Shoe', paletteColor(c.bootColor));
-    set('Sash', paletteColor(c.beltColor));
+    for (const [mat, slot] of Object.entries(MODELS[this.modelId].colors)) set(mat, paletteColor(c[slot]));
     set('EyeWhite', 0xf4f1ea);
     set('Pupil', 0x05070c);
     set('Highlight', 0xffffff);
