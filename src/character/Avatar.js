@@ -98,9 +98,9 @@ export class Avatar {
     };
 
     const o = c.outfit;
-    const w = b.width * muscle * (female ? 0.86 : 1);
+    const w = b.width * muscle * (female ? 0.86 : 1) * (female ? 1 : 1.08);
     const d = b.chestDepth * muscle;
-    const L = b.limb * muscle * (female ? 0.88 : 1);
+    const L = b.limb * muscle * (female ? 0.88 : 1) * (female ? 1 : 1.08);
     const primal = o === 'primal';
     const legRole = o === 'gi' || primal ? 'armor' : 'suit';
     const topRole = primal ? 'skin' : o === 'rokan' ? 'suit' : 'armor';
@@ -124,9 +124,9 @@ export class Avatar {
       }
       // Thigh and knee, angled slightly outward for a wide, heavy stance.
       // Gi pants are baggy, so the thighs are wider.
-      const baggy = primal ? 1.25 : 1;
-      add(legRole, new THREE.CapsuleGeometry(0.1 * L * baggy, 0.32, 4, 10), [0.13 * s, 0.72, 0], [0, 0, -0.07 * s]);
-      add(legRole, new THREE.SphereGeometry(0.085 * L * baggy, 8, 6), [0.135 * s, 0.5, 0.01]);
+      const baggy = primal ? 1.32 : 1.08;
+      add(legRole, new THREE.CapsuleGeometry(0.115 * L * baggy, 0.32, 4, 10), [0.13 * s, 0.72, 0], [0, 0, -0.07 * s]);
+      add(legRole, new THREE.SphereGeometry(0.105 * L * baggy, 10, 8), [0.135 * s, 0.5, 0.01]);
     }
 
     // Pelvis, waist, chest: a strong V-taper.
@@ -148,7 +148,7 @@ export class Avatar {
       // Bare chests get flatter, squarer pecs; muscle details skip the outline.
       const bare = chestRole === 'skin';
       for (const s of [-1, 1]) {
-        add(bare ? 'skinDetail' : chestRole, new THREE.SphereGeometry(0.11, 10, 8), [0.095 * w * s, bare ? 1.37 : 1.36, bare ? 0.095 * d : 0.1 * d], [0, 0, bare ? -0.12 * s : 0], bare ? [1.4 * w, 0.62, 0.42 * d] : [1.15 * w, 0.8, 0.55 * d]);
+        add(bare ? 'skinDetail' : chestRole, new THREE.SphereGeometry(0.11, 10, 8), [0.095 * w * s, bare ? 1.37 : 1.36, bare ? 0.095 * d : 0.1 * d], [0, 0, bare ? -0.12 * s : 0], bare ? [1.36 * w, 0.51, 0.35 * d] : [1.15 * w, 0.8, 0.55 * d]);
       }
     }
     // Traps and thick neck.
@@ -257,14 +257,18 @@ export class Avatar {
     const female = c.body === 'female';
     // Skull, strong jaw and chin, brow ridge, ears, nose.
     add('skin', new THREE.SphereGeometry(R, 16, 12), [0, 0, 0], [0, 0, 0], [0.95, 1.03, 1]);
-    add('skin', new THREE.SphereGeometry(R * 0.8, 12, 8), [0, -0.06, 0.02], [0, 0, 0], [female ? 0.88 : 1.02, 0.85, 0.95]);
-    if (!female) add('skin', new THREE.SphereGeometry(0.045, 10, 6), [0, -0.105, 0.055], [0, 0, 0], [1.35, 0.85, 1]);
+    add('skin', new THREE.SphereGeometry(R * 0.8, 14, 10), [0, -0.068, 0.018], [0, 0, 0], [female ? 0.88 : 0.96, 0.8, 0.92]);
+    if (!female) { 
+      // Faceted, projecting jaw/chin gives the hero a stern anime profile.
+      add('skin', new THREE.BoxGeometry(0.115, 0.045, 0.082), [0, -0.112, 0.047], [0, 0, 0], [1, 1, 1]);
+      for (const s of [-1, 1]) add('skin', new THREE.SphereGeometry(0.037, 8, 6), [s * 0.069, -0.055, 0.036], [0, 0, 0], [0.85, 1.15, 0.7]);
+    }
     add('skin', new THREE.CapsuleGeometry(0.016, 0.085, 3, 6), [0, 0.032, R * 0.88], [0, 0, Math.PI / 2]);
     for (const s of [-1, 1]) add('skin', new THREE.SphereGeometry(0.024, 8, 6), [s * R * 0.93, -0.005, -0.005], [0, 0, 0], [0.5, 1, 0.8]);
     add('skin', new THREE.ConeGeometry(0.012, 0.03, 4), [0, -0.022, R * 1.0], [Math.PI / 2, 0, 0]);
 
     // Eyes: expression sets their openness.
-    const ex = { fierce: [1.05, 0.68, 0.85], focused: [1, 0.92, 1], bright: [0.95, 1.25, 1.1] }[c.expression] || [1.05, 0.68, 0.85];
+    const ex = { fierce: [1.0, 0.48, 0.75], focused: [1, 0.8, 0.9], bright: [0.95, 1.25, 1.1] }[c.expression] || [1.05, 0.68, 0.85];
     for (const s of [-1, 1]) {
       const x = 0.043 * s;
       const z = R * 0.97;
@@ -272,11 +276,11 @@ export class Avatar {
       add('iris', new THREE.CircleGeometry(0.016 * ex[2], 12), [x - 0.004 * s, 0.002, z + 0.002], [0, 0.18 * s, 0]);
       add('dark', new THREE.CircleGeometry(0.0075 * ex[2], 10), [x - 0.004 * s, 0.002, z + 0.003], [0, 0.18 * s, 0]);
       // Upper lid line: slants down toward the nose for a fierce look.
-      const lidTilt = c.expression === 'bright' ? 0.05 : c.expression === 'focused' ? 0.15 : 0.32;
+      const lidTilt = c.expression === 'bright' ? 0.05 : c.expression === 'focused' ? 0.15 : 0.39;
       add('dark', new THREE.PlaneGeometry(0.064, 0.009), [x, 0.004 + 0.031 * ex[1], z + 0.004], [0, 0.18 * s, lidTilt * s]);
       // Brows
       const br = { fierce: [0.066, 0.017, 0.45, 0.044], heavy: [0.07, 0.026, 0.18, 0.046], sharp: [0.064, 0.01, 0.6, 0.046], calm: [0.056, 0.011, -0.05, 0.05] }[c.brows] || [0.066, 0.017, 0.45, 0.044];
-      add('hairBrow', new THREE.PlaneGeometry(br[0], br[1]), [0.046 * s, br[3], R * 0.97 + 0.006], [0, 0.18 * s, br[2] * s]);
+      add('hairBrow', new THREE.PlaneGeometry(br[0], br[1]), [0.046 * s, br[3] - (c.expression === 'fierce' ? 0.007 : 0), R * 0.97 + 0.008], [0, 0.18 * s, br[2] * s]);
     }
     add('dark', new THREE.PlaneGeometry(c.expression === 'bright' ? 0.03 : 0.04, 0.007), [0, -0.07, R * 0.93]);
 
@@ -393,7 +397,7 @@ export class Avatar {
     this.mats.belt.color.setHex(paletteColor(c.beltColor));
     this.body.scale.setScalar(buildOf(c).height * (female ? 0.96 : 1));
     this.head.position.set(0, female ? 1.67 : 1.71, 0.01);
-    this.head.scale.setScalar(female ? 1.04 : 1.1);
+    this.head.scale.setScalar(female ? 0.98 : 0.99); // heroic head-to-body ratio, not chibi
     // Arms: Titan armor and tank top are sleeveless (bare, powerful arms).
     const sleeve = c.outfit === 'gi' || c.outfit === 'jacket';
     const gloved = c.outfit === 'primal'; // fingerless gloves with a colored cuff
