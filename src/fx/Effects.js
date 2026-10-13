@@ -210,6 +210,7 @@ export class Effects {
   // Energy-scaled ki explosion (see Explosions.js).
   explosion(pos, color, energy = 1) { this.boom.explode(pos, color, energy); }
   dust(pos, size, count, color) { this.boom.dust(pos, size, count, color); }
+  crater(pos, radius) { return this.boom.crater(pos, radius); }
 
   // Hit spark that pops for a few frames where a blow lands.
   impact(pos, color = 0xffffff, size = 0.5) {

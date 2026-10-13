@@ -526,6 +526,8 @@ export class Player {
       },
       dir: (out) => this.beamDir(this.game.lastInput || input, b, out),
       duration, dps: total / duration, radius, color: atk.color, team: 'player',
+      // Explosion size: the Ultimate beam outdoes Kamehameha / Galick Gun; charge and transformations add more.
+      energy: (atk.id === 'ultimateBeam' ? 7 : 5) * (0.55 + 0.45 * b.charge) * (this.form !== 'base' ? 1.1 : 1),
     });
     b.cooldown = atk.cooldown;
     bus.emit('beam:fired', { attack: atk, charge: b.charge, both: b.both });

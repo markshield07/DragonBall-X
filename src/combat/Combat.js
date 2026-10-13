@@ -42,8 +42,9 @@ export class Combat {
 
   // A continuous beam that follows origin()/dir() callbacks, hits the first
   // enemy target along it and deals `dps` in short ticks.
-  fireBeam({ origin, dir, duration, dps, radius, color, team = 'player' }) {
-    this.playerBeam = { origin, dir, duration, t: 0, dps, radius, color, team, tick: 0, o: new THREE.Vector3(), d: new THREE.Vector3() };
+  // `energy` sizes the explosions where it lands (see Explosions.js).
+  fireBeam({ origin, dir, duration, dps, radius, color, team = 'player', energy = 2.5 }) {
+    this.playerBeam = { origin, dir, duration, t: 0, dps, radius, color, team, energy, tick: 0, boom: 0, o: new THREE.Vector3(), d: new THREE.Vector3(), impact: null };
     this.beamOuter.material.color.setHex(color);
     this.beamMid.material.color.setHex(color);
     this.beamTip.material.color.setHex(color);
@@ -56,8 +57,25 @@ export class Combat {
     b.t += dt;
     const o = b.origin(b.o);
     const d = b.dir(b.d);
-    // Find the first target the beam reaches.
+    // Where it meets the ground (or a hill), marching along the beam.
     let len = 45;
+    let ground = false;
+    for (let t = 0.5; t <= 45; t += 0.5) {
+      _a.copy(o).addScaledVector(d, t);
+      if (_a.y < terrainHeight(_a.x, _a.z)) {
+        let lo = t - 0.5;
+        let hi = t;
+        for (let k = 0; k < 6; k++) {
+          const m = (lo + hi) / 2;
+          _a.copy(o).addScaledVector(d, m);
+          if (_a.y < terrainHeight(_a.x, _a.z)) hi = m; else lo = m;
+        }
+        len = hi;
+        ground = true;
+        break;
+      }
+    }
+    // Find the first target the beam reaches.
     let hitT = null;
     for (const t of this.targets) {
       if (t.team !== 'enemy' || (t.active && !t.active())) continue;
@@ -68,7 +86,7 @@ export class Combat {
       const rr = s.radius + b.radius;
       if (perp2 > rr * rr) continue;
       const hitAt = along - Math.sqrt(Math.max(0, rr * rr - perp2)) + b.radius;
-      if (hitAt < len) { len = Math.max(0.3, hitAt); hitT = t; }
+      if (hitAt < len) { len = Math.max(0.3, hitAt); hitT = t; ground = false; }
     }
     // Grow in quickly, fade out at the end.
     const k = Math.min(1, b.t / 0.12) * Math.min(1, (b.duration - b.t) / 0.25 + 0.2);
@@ -84,6 +102,19 @@ export class Combat {
     this.beamTip.position.copy(o).addScaledVector(d, reach);
     this.beamTip.scale.setScalar(r * (hitT && reach >= len ? 7 : 3));
     if (Math.random() < 0.8) this.fx.stream(o, b.color, { vy: 0, spread: r * 0.8, size: r * 0.6, life: 0.2 });
+    // Where it lands, the beam keeps blowing up: rolling explosions, rocks
+    // and a crater that grows while it digs in.
+    b.boom -= dt;
+    if ((hitT || ground) && reach >= len) {
+      const point = _b.copy(o).addScaledVector(d, len);
+      if (!b.impact) b.impact = new THREE.Vector3();
+      b.impact.copy(point);
+      if (b.boom <= 0) {
+        b.boom = 0.2;
+        this.fx.explosion(point, b.color, b.energy * 0.38);
+        if (ground) this.fx.crater(point, 0.8 + 0.4 * b.energy * Math.min(1, b.t / b.duration + 0.3));
+      }
+    }
     b.tick -= dt;
     if (hitT && reach >= len && b.tick <= 0) {
       b.tick = 0.1;
@@ -96,7 +127,15 @@ export class Combat {
     if (b.t >= b.duration) this.stopBeam();
   }
 
-  stopBeam() {
+  stopBeam(quiet = false) {
+    const b = quiet ? null : this.playerBeam;
+    // The finale: one huge explosion where the beam was landing (or at its tip in the air).
+    if (b) {
+      const at = b.impact || _b.copy(b.o).addScaledVector(b.d, Math.min(45, b.t * 60));
+      this.fx.explosion(at, b.color, b.energy);
+      this.fx.flash(at, 0xffffff, 2 + b.energy * 2, 0.35);
+      bus.emit('projectile:explode', { position: at.clone(), charged: true, team: b.team, kind: 'beam', energy: b.energy });
+    }
     this.playerBeam = null;
     this.beamGroup.visible = false;
     this.beamTip.visible = false;
@@ -258,7 +297,7 @@ export class Combat {
   }
 
   clearProjectiles(team = null) {
-    if (!team || team === 'player') { if (this.playerBeam) this.stopBeam(); }
+    if (!team || team === 'player') { if (this.playerBeam) this.stopBeam(true); }
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       if (!team || this.projectiles[i].team === team) this.removeProjectile(i);
     }

@@ -5,8 +5,9 @@ import { toon, toonUnique } from '../render/toon.js';
 import { terrainHeight } from '../world/Arena.js';
 
 const MAX_BALLS = 8;
-const MAX_PUFFS = 48;
-const MAX_ROCKS = 72;
+const MAX_PUFFS = 80;
+const MAX_ROCKS = 96;
+const MAX_CRATERS = 6;
 const _v = new THREE.Vector3();
 const _m = new THREE.Matrix4();
 const _q = new THREE.Quaternion();
@@ -14,6 +15,35 @@ const _e = new THREE.Euler();
 const _s = new THREE.Vector3();
 const _c = new THREE.Color();
 const _s2 = new THREE.Color();
+
+// Scorched crater floor: dark centre, a lighter churned ring, radial cracks.
+function craterTexture() {
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 256;
+  const g = cv.getContext('2d');
+  const grd = g.createRadialGradient(128, 128, 0, 128, 128, 128);
+  grd.addColorStop(0, 'rgba(28,18,12,0.95)');
+  grd.addColorStop(0.45, 'rgba(58,38,24,0.92)');
+  grd.addColorStop(0.72, 'rgba(110,80,52,0.85)');
+  grd.addColorStop(0.86, 'rgba(150,118,80,0.6)');
+  grd.addColorStop(1, 'rgba(150,118,80,0)');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 256, 256);
+  g.strokeStyle = 'rgba(15,8,4,0.8)';
+  g.lineCap = 'round';
+  for (let i = 0; i < 14; i++) {
+    let a = (i / 14) * Math.PI * 2 + rand(-0.2, 0.2);
+    let r = rand(20, 50);
+    g.lineWidth = rand(2, 4);
+    g.beginPath();
+    g.moveTo(128 + Math.cos(a) * r, 128 + Math.sin(a) * r);
+    while (r < 120) { r += rand(10, 20); a += rand(-0.25, 0.25); g.lineTo(128 + Math.cos(a) * r, 128 + Math.sin(a) * r); }
+    g.stroke();
+  }
+  const t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
 
 // Anime ki explosions, sized by how much energy went into the attack:
 // a white-hot core, a coloured shock shell, cel-shaded smoke that starts out
@@ -73,6 +103,54 @@ export class Explosions {
       this.rockMesh.setMatrixAt(i, _m.makeScale(0, 0, 0));
     }
     this.rockCursor = 0;
+    // Craters left by the biggest attacks: a scorched bowl decal, a ring of
+    // broken rock thrown up around it and a few loose boulders.
+    this.craterTex = craterTexture();
+    const rim = new THREE.TorusGeometry(1, 0.13, 7, 40);
+    rim.rotateX(Math.PI / 2);
+    const rp = rim.attributes.position;
+    for (let i = 0; i < rp.count; i++) {
+      _v.fromBufferAttribute(rp, i);
+      const a = Math.atan2(_v.z, _v.x);
+      const k = 1 + 0.35 * Math.sin(a * 7) * Math.sin(a * 3 + 1) + 0.2 * Math.sin(a * 17);
+      rp.setY(i, Math.max(-0.02, _v.y * k * 1.4));
+      const w = 1 + 0.06 * Math.sin(a * 11);
+      rp.setX(i, _v.x * w); rp.setZ(i, _v.z * w);
+    }
+    rim.computeVertexNormals();
+    this.craters = [];
+    for (let i = 0; i < MAX_CRATERS; i++) {
+      const decal = new THREE.Mesh(new THREE.CircleGeometry(1, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: this.craterTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 }));
+      const rimMesh = new THREE.Mesh(rim, toonUnique(0x8f7356));
+      rimMesh.material.transparent = true;
+      const g = new THREE.Group();
+      g.add(decal, rimMesh);
+      g.visible = false;
+      scene.add(g);
+      this.craters.push({ g, decal, rim: rimMesh, t: 0, life: 0, size: 1 });
+    }
+    this.craterCursor = 0;
+  }
+
+  // Leaves a crater of the given radius on the ground at pos (x/z).
+  crater(pos, radius) {
+    // Grow an existing crater nearby instead of stacking a new one on top.
+    for (const c of this.craters) {
+      if (c.g.visible && Math.hypot(c.g.position.x - pos.x, c.g.position.z - pos.z) < c.size * 0.6) {
+        c.size = Math.max(c.size, radius);
+        c.t = Math.min(c.t, 0.3);
+        return c;
+      }
+    }
+    const c = this.craters[this.craterCursor];
+    this.craterCursor = (this.craterCursor + 1) % MAX_CRATERS;
+    c.g.visible = true;
+    c.g.position.set(pos.x, terrainHeight(pos.x, pos.z) + 0.03, pos.z);
+    c.g.rotation.y = rand(0, Math.PI * 2);
+    c.size = radius;
+    c.t = 0;
+    c.life = 30;
+    return c;
   }
 
   // How much "energy" a projectile carries, from its size, damage and type.
@@ -95,16 +173,16 @@ export class Explosions {
     const c = _c.set(color);
 
     // Sparks + flash (shared particle pool).
-    this.fx.burst(center, color, Math.round(8 + 28 * energy), 2 + 4 * energy, 0.05 + 0.05 * energy, 0.45 + 0.25 * energy, { drag: 2 });
-    this.fx.burst(center, 0xffffff, Math.round(4 + 10 * energy), 3 + 5 * energy, 0.04 + 0.03 * energy, 0.3);
-    if (energy > 0.9) this.fx.burst(center, 0xffb347, Math.round(10 * energy), 1.5 + 2 * energy, 0.12 * energy, 0.9, { up: 1.5, drag: 1.2 });
+    this.fx.burst(center, color, Math.min(90, Math.round(8 + 28 * energy)), 2 + 4 * energy, 0.05 + 0.05 * energy, 0.45 + 0.25 * energy, { drag: 2 });
+    this.fx.burst(center, 0xffffff, Math.min(40, Math.round(4 + 10 * energy)), 3 + 5 * energy, 0.04 + 0.03 * energy, 0.3);
+    if (energy > 0.9) this.fx.burst(center, 0xffb347, Math.min(50, Math.round(10 * energy)), 1.5 + 2 * energy, 0.12 * energy, 0.9, { up: 1.5, drag: 1.2 });
 
     if (!near) {
       // Fireball: white core that blooms then collapses, coloured shell that keeps expanding.
       const b = this.balls[this.ballCursor];
       this.ballCursor = (this.ballCursor + 1) % MAX_BALLS;
       b.t = 0;
-      b.dur = 0.35 + 0.35 * Math.min(2, energy);
+      b.dur = 0.35 + 0.3 * Math.min(4, energy);
       b.R = R;
       b.color.copy(c);
       b.core.position.copy(center);
@@ -113,7 +191,7 @@ export class Explosions {
       b.core.visible = b.shell.visible = true;
 
       // Smoke: a glowing ball of puffs; near the ground it also rolls outward as a dust wall.
-      const n = Math.round((3 + 9 * energy) * Math.max(0.4, budget));
+      const n = Math.round(Math.min(30, 3 + 9 * energy) * Math.max(0.4, budget));
       for (let i = 0; i < n; i++) {
         const dir = new THREE.Vector3(rand(-1, 1), rand(-0.3, 1), rand(-1, 1)).normalize();
         const p = this.nextPuff();
@@ -130,7 +208,7 @@ export class Explosions {
       }
       // Big blasts throw up a mushroom column of fire and smoke.
       if (energy > 1) {
-        const col = Math.round((2 + 3 * energy) * Math.max(0.4, budget));
+        const col = Math.round(Math.min(14, 2 + 3 * energy) * Math.max(0.4, budget));
         for (let i = 0; i < col; i++) {
           const p = this.nextPuff();
           p.m.position.copy(center).add(_s.set(rand(-0.2, 0.2) * R, rand(0, 0.3) * R, rand(-0.2, 0.2) * R));
@@ -145,7 +223,7 @@ export class Explosions {
         }
       }
       if (ground) {
-        const ring = Math.round((4 + 8 * energy) * Math.max(0.4, budget));
+        const ring = Math.round(Math.min(26, 4 + 8 * energy) * Math.max(0.4, budget));
         for (let i = 0; i < ring; i++) {
           const a = (i / ring) * Math.PI * 2 + rand(-0.2, 0.2);
           const p = this.nextPuff();
@@ -167,8 +245,10 @@ export class Explosions {
       const g = new THREE.Vector3(pos.x, floor, pos.z);
       this.fx.ring(g, color, { maxRadius: R * 3.2, duration: 0.55 + 0.2 * energy, opacity: 0.6, y: floor + 0.06 });
       if (energy > 0.7) this.fx.ring(g, 0xffffff, { maxRadius: R * 5, duration: 0.9 + 0.2 * energy, opacity: 0.3, y: floor + 0.05 });
-      if (energy > 0.45 && floor < 0.5) this.fx.crack(g, R * 1.6);
-      const rocks = Math.round((energy < 0.45 ? 2 : 4 + 14 * energy) * Math.max(0.4, budget));
+      // The biggest blasts gouge a crater; smaller ones crack the ground.
+      if (energy >= 1.8) this.crater(g, R * 0.75);
+      else if (energy > 0.45 && floor < 0.5) this.fx.crack(g, R * 1.6);
+      const rocks = Math.round(Math.min(60, energy < 0.45 ? 2 : 4 + 14 * energy) * Math.max(0.4, budget));
       for (let i = 0; i < rocks; i++) {
         const r = this.rocks[this.rockCursor];
         this.rockCursor = (this.rockCursor + 1) % MAX_ROCKS;
@@ -214,6 +294,18 @@ export class Explosions {
   }
 
   update(dt) {
+    for (const c of this.craters) {
+      if (!c.g.visible) continue;
+      c.t += dt;
+      const grow = 1 - Math.pow(1 - Math.min(1, c.t / 0.35), 3);
+      c.decal.scale.setScalar(c.size * 1.25 * grow);
+      c.rim.scale.set(c.size * grow, c.size * (0.5 + 0.5 * grow), c.size * grow);
+      const fade = Math.min(1, (c.life - c.t) / 4);
+      c.decal.material.opacity = fade;
+      c.rim.material.opacity = fade;
+      c.rim.position.y = -(1 - fade) * 0.3 * c.size;
+      if (c.t >= c.life) c.g.visible = false;
+    }
     for (const b of this.balls) {
       if (!b.core.visible) continue;
       b.t += dt;

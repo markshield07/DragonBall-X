@@ -668,6 +668,11 @@ export class Game {
     });
     bus.on('beam:fired', ({ attack }) => {
       this.banner.push({ title: `${attack.name.toUpperCase()}!`, color: '#7fd8ff', duration: 1.2, priority: true });
+      // Recoil: a shockwave and dust kicked up around your feet as it fires.
+      const feet = this.player.headWorld.clone().setY(this.player.groundY());
+      this.effects.ring(feet.clone().setY(feet.y + 0.05), attack.color, { maxRadius: 4, duration: 0.6, opacity: 0.6 });
+      this.effects.dust(feet, 1.1, 5);
+      this.addShake(0.12);
       this.haptic('left', 1, 200);
       this.haptic('right', 1, 200);
     });
