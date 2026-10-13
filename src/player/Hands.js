@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { toonUnique, addOutline, glowMaterial, softCircleTexture } from '../render/toon.js';
+import { toonUnique, addOutline, outlineExtrudeMaterial, glowMaterial, softCircleTexture } from '../render/toon.js';
+import { forearm as forearmGeometry } from '../character/anatomy.js';
 import { SKIN_TONES, paletteColor, buildOf } from '../character/options.js';
 import { damp } from '../core/math.js';
 
@@ -41,10 +42,14 @@ export class Hands {
       thumb.rotation.set(Math.PI / 2, 0, 0.6 * s);
       // Forearm: extends back (+Z) and slightly down from the grip.
       const arm = new THREE.Group();
-      const forearm = new THREE.Mesh(new THREE.CapsuleGeometry(0.042, 0.24, 3, 8), this.skinMat);
-      forearm.rotation.x = Math.PI / 2;
-      forearm.position.z = 0.17;
-      addOutline(forearm, 0.06);
+      // Sculpted forearm (flexor bulk near the elbow, flat wrist), built
+      // elbow -> wrist along +Y, then laid back along +Z from the wrist.
+      const forearm = new THREE.Mesh(forearmGeometry(0.31, 0.95, 1, s), this.skinMat);
+      forearm.rotation.x = -Math.PI / 2;
+      forearm.position.z = 0.34;
+      const fOut = new THREE.Mesh(forearm.geometry, outlineExtrudeMaterial(0.003));
+      fOut.userData.isOutline = true;
+      forearm.add(fOut);
       // Wrist wraps: two stacked bands
       const band = new THREE.Mesh(new THREE.CylinderGeometry(0.049, 0.047, 0.075, 12), this.bandMat);
       band.rotation.x = Math.PI / 2;

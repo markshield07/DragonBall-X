@@ -39,8 +39,9 @@ The **mirror** to your left (a little house with a golden frame) shows your char
 
 ## Rokan, the base character
 
-Rokan is the one base model every player customises; there are no separate player characters. Out of the box he matches the reference concept art: a shirtless, muscular anime brawler with spiky black hair and bangs, steel-blue eyes, baggy red gi pants with a ragged waist flap, a tied black sash, black fingerless gloves with red cuffs, bandaged ankles and black sandals (the **Primal Gi** outfit). Titan Armour (red-and-black battle armour with heavy boots) is the second outfit.
+Rokan is the one base model every player customises; there are no separate player characters. Out of the box he matches the reference concept art: a shirtless, muscular anime brawler with spiky black hair and bangs, steel-blue eyes, baggy red gi pants, a tied black sash, black fingerless gloves with red cuffs, bandaged ankles and black sandals (the **Primal Gi** outfit). Titan Armour (red-and-black battle armour with heavy boots) is the second outfit.
 
+- **Sculpted anatomy** (`src/character/anatomy.js`): the torso, neck, arms and legs are smooth lofted shapes with real muscle groups (pecs, six-pack, obliques, lats, traps, deltoids, biceps, triceps, forearms, quads, calves), not stacked spheres. Bigger builds and transformations add definition; on the bare chest, anime-style ink lines mark the pecs and abs.
 - **One rig** (`src/character/Avatar.js`): the body is built from procedural parts, then merged into one mesh per material (skin, undersuit, armour, wraps, boots, belt, trim) which keeps the mirror avatar cheap. The head (face and hair) and the two IK arms stay separate so they can follow your head and hands.
 - **Customisation** (`src/character/options.js`): builds (Lean, Athletic, Muscular, Heavy Muscular) scale the shoulders, chest and limbs of the same rig. Frame (masculine or feminine), 10 skin tones, 8 hairstyles (Titan Mane, Wild, Upright, Short, Layered, Prince with a widow's peak, Swordsman, Ponytail), 7 hair colours, 7 eye colours, 3 expressions, 4 brow shapes and 4 scar options. Outfits are Primal Gi, Titan Armour, Training Gi, Battle Jacket and Sleeveless Fighter, and each has five colour sections (main/pants, under layer/wraps, gloves, footwear, belt/sash) picked from a shared 11-colour palette. The first-person hands use the same skin, wraps and build.
 - **Transformations** (`src/progression/forms.js`) only change hair shape and colour, eye colour, muscle, fur and tail, so every form works on every customisation. Super Saiyan 1 is playable: golden lifted hair, teal eyes, gold aura, same face, skin and outfit. Super Saiyan 2 (sharper spikes, lightning), 3 (very long hair), 4 (black hair, red fur, tail, more muscle) and 5 (electric blue hair and aura) are already described in data and render in the rig; they unlock in later phases.
@@ -148,7 +149,7 @@ __xrDevice.controllers.left.updateAxes('thumbstick', 0, -1);   // push left stic
 - Controller tracking drives the virtual hands; laser-pointer menu clicks with the trigger.
 - Motion punches register; trigger fires ki blasts; both grips + A transforms; X opens the menu.
 - Snap turn, smooth locomotion and teleport.
-- Draw calls: about 122 in training and 204 in the boss fight on the Low preset, 216 on High (both eyes counted).
+- Draw calls: about 118 in training and 200 in the boss fight on the Low preset, 212 on High (both eyes counted).
 
 **Not verified, needs real Quest 2 and Quest 3 testing:**
 
@@ -174,7 +175,7 @@ src/
   player/Player.js        health, ki and stamina, locomotion, punching, blasts, blocking
   player/Hands.js         first-person hands and forearms, velocity tracking, hand glow
   player/Comfort.js       movement vignette and fades
-  character/              Rokan base model: options, procedural hair, merged avatar rig
+  character/              Rokan base model: options, procedural hair and anatomy, merged avatar rig
   combat/Combat.js        targets, swept punch and projectile collisions, projectiles
   progression/            stats and Power Level, all 6 forms, all 8 attacks
   transform/              the 5-stage transformation experience

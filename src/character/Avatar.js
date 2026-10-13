@@ -4,6 +4,8 @@ import { toonUnique, addOutline, outlineExtrudeMaterial } from '../render/toon.j
 import { buildHairGeometry, HEAD_RADIUS } from './hair.js';
 import { SKIN_TONES, HAIR_COLORS, EYE_COLORS, paletteColor, buildOf } from './options.js';
 import { FORMS } from '../progression/forms.js';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { torsoBand, torsoShell, torsoPoint, bulge, neck, thigh, calf, upperArm, forearm, partBasis } from './anatomy.js';
 
 const tmpA = new THREE.Vector3();
 const tmpB = new THREE.Vector3();
@@ -15,6 +17,13 @@ const _q = new THREE.Quaternion();
 const _e = new THREE.Euler();
 const _p = new THREE.Vector3();
 const _s = new THREE.Vector3();
+const _dir = new THREE.Vector3();
+const _v1 = new THREE.Vector3();
+const _v2 = new THREE.Vector3();
+const _elbow = new THREE.Vector3();
+const _hint = new THREE.Vector3();
+const _bias = new THREE.Vector3();
+const _basis = new THREE.Matrix4();
 
 const ARMOR_TRIM = 0x17171d;
 const UPPER_ARM = 0.3;
@@ -56,6 +65,8 @@ export class Avatar {
       eyeWhite: new THREE.MeshBasicMaterial({ color: 0xffffff }),
       iris: new THREE.MeshBasicMaterial({ color: 0x111111 }),
       dark: new THREE.MeshBasicMaterial({ color: 0x15100c }),
+      // Anime ink lines for muscle definition (pec edges, abs), tinted to the skin.
+      line: new THREE.MeshBasicMaterial({ color: 0x2a1a10, side: THREE.DoubleSide }),
     };
     this.body = new THREE.Group();
     this.root.add(this.body);
@@ -74,7 +85,8 @@ export class Avatar {
   }
 
   // ---- Static body -----------------------------------------------------------
-  // Each part is added to a bucket by material role, then merged.
+  // Each part is added to a bucket by material role, then merged. The body is
+  // sculpted from lofted muscle shapes (see anatomy.js), not stacked spheres.
   rebuildBody() {
     const c = this.character;
     const f = FORMS[this.formId];
@@ -87,125 +99,143 @@ export class Avatar {
 
     for (const ch of [...this.staticGroup.children]) { ch.geometry.dispose(); this.staticGroup.remove(ch); }
     const parts = {};
+    const push = (role, geo) => {
+      const g = geo.index ? geo.toNonIndexed() : geo;
+      if (g !== geo) geo.dispose();
+      for (const n of Object.keys(g.attributes)) if (n !== 'position' && n !== 'normal') g.deleteAttribute(n);
+      (parts[role] ||= []).push(g);
+    };
     const add = (role, geo, pos, rot = [0, 0, 0], scl = [1, 1, 1]) => {
       _q.setFromEuler(_e.set(rot[0], rot[1], rot[2]));
       _m.compose(_p.set(pos[0], pos[1], pos[2]), _q, _s.set(scl[0], scl[1], scl[2]));
-      const g = geo.index ? geo.toNonIndexed() : geo.clone();
-      g.applyMatrix4(_m);
-      for (const n of Object.keys(g.attributes)) if (n !== 'position' && n !== 'normal') g.deleteAttribute(n);
-      (parts[role] ||= []).push(g);
-      geo.dispose();
+      addM(role, geo, _m);
+    };
+    const addM = (role, geo, matrix) => {
+      if (matrix) geo.applyMatrix4(matrix);
+      push(role, geo);
     };
 
     const o = c.outfit;
-    const w = b.width * muscle * (female ? 0.86 : 1) * (female ? 1 : 1.08);
-    const d = b.chestDepth * muscle;
-    const L = b.limb * muscle * (female ? 0.88 : 1) * (female ? 1 : 1.08);
     const primal = o === 'primal';
+    const w = b.width * muscle * (female ? 1 : 1.08);
+    const d = b.chestDepth * muscle;
+    const L = b.limb * muscle * (female ? 0.88 : 1.08);
+    // Muscle definition: bigger builds and transformations show more of it;
+    // cloth smooths it out.
+    const def = Math.min(1.5, b.limb * muscle) * (female ? 0.6 : 1);
+    const clothed = { primal: 1, tank: 0.75, rokan: 0.55, gi: 0.45, jacket: 0.45 }[o] ?? 0.6;
+    const P = { female, w, d, def: def * clothed };
+    const front = (y, extra = 0) => torsoPoint(y, 0, P, _p).z + extra;
+    const side = (y, extra = 0) => torsoPoint(y, Math.PI / 2, P, _p).x + extra;
+
     const legRole = o === 'gi' || primal ? 'armor' : 'suit';
     const topRole = primal ? 'skin' : o === 'rokan' ? 'suit' : 'armor';
 
+    // Torso, split into bands so each clothing region gets its material.
+    if (primal) {
+      // Baggy gi pants ride up over the hips; bare, sculpted torso above.
+      push('armor', torsoShell(0.8, 1.06, P, (t) => 0.03 * (1 - t) + 0.012));
+      push('skin', torsoBand(1.0, 1.58, P));
+    } else {
+      push(legRole, torsoBand(0.8, 1.0, P));
+      const neckTop = o === 'tank' ? 1.44 : 1.5;
+      push(o === 'tank' ? 'armor' : topRole, torsoBand(1.0, neckTop, P));
+      push('skin', torsoBand(neckTop, 1.58, P));
+    }
+    // Neck with sternocleidomastoid ridges; it tucks into the traps and head.
+    _m.makeTranslation(0, 1.5, -0.01);
+    addM('skin', neck(0.2, Math.sqrt(w) * (female ? 1 : 1.05), female), _m);
+
+    // Legs: hip -> knee -> ankle, angled slightly outward for a wide stance.
     for (const s of [-1, 1]) {
-      const x = 0.14 * s;
+      const hip = tmpA.set(0.1 * s * Math.sqrt(w), 0.92, 0);
+      const knee = tmpB.set(0.135 * s, 0.5, 0.012);
+      const ankle = tmpC.set(0.14 * s, 0.1, 0);
+      const thighDir = new THREE.Vector3().subVectors(knee, hip);
+      const shinDir = new THREE.Vector3().subVectors(ankle, knee);
+      const fwd = new THREE.Vector3(0, 0, 1);
+      const baggy = primal ? 1.3 : o === 'gi' ? 1.12 : 1;
+      const thighM = partBasis(hip, thighDir, fwd, new THREE.Matrix4());
+      addM(legRole, thigh(thighDir.length(), L, def, s, baggy, primal ? 0.3 : 0.6), thighM);
       if (primal) {
-        // Sandals: bare foot on a dark sole with a strap, bandaged ankles,
-        // and loose pant legs ending in a ragged hem.
+        // Loose lower pant leg blousing over the ankle wraps, ragged hem.
+        add('armor', raggedTube(0.105 * L, 0.125 * L, 0.38, 14, 0.035), [0.14 * s, 0.37, 0.005]);
+        // Sandals: bare foot on a dark sole with a strap, bandaged ankles.
+        const x = 0.14 * s;
         add('skin', new THREE.SphereGeometry(0.5, 12, 8), [x, 0.05, 0.06], [0, 0.08 * s, 0], [0.11 * L, 0.09, 0.26]);
         add('boots', new THREE.BoxGeometry(0.13 * L, 0.03, 0.28), [x, 0.015, 0.06], [0, 0.08 * s, 0]);
         add('boots', new THREE.CylinderGeometry(0.075 * L, 0.08 * L, 0.06, 10, 1, true), [x, 0.07, 0.03], [0.25, 0, 0], [1, 1, 1.25]);
-        add('suit', new THREE.CylinderGeometry(0.068 * L, 0.072 * L, 0.16, 10), [x, 0.15, 0]);
-        add('armor', raggedTube(0.105 * L, 0.125 * L, 0.42, 12, 0.035), [x * 1.04, 0.42, 0]);
+        add('suit', new THREE.CylinderGeometry(0.06 * L, 0.066 * L, 0.16, 10), [x, 0.15, 0]);
       } else {
+        addM(legRole, calf(shinDir.length(), L, def), partBasis(knee, shinDir, fwd, new THREE.Matrix4()));
         // Heavy anime boots: wide rounded foot, tall shaft, contrasting cuff.
+        const x = 0.14 * s;
         add('boots', new THREE.SphereGeometry(0.5, 12, 8), [x, 0.07, 0.05], [0, 0.08 * s, 0], [0.14 * L, 0.14, 0.3]);
         add('trim', new THREE.BoxGeometry(0.15 * L, 0.03, 0.3), [x, 0.015, 0.05], [0, 0.08 * s, 0]);
-        add('boots', new THREE.CylinderGeometry(0.1 * L, 0.088 * L, 0.36, 10), [x, 0.26, 0]);
-        add('belt', new THREE.CylinderGeometry(0.11 * L, 0.106 * L, 0.06, 10), [x, 0.44, 0]);
+        add('boots', new THREE.CylinderGeometry(0.088 * L, 0.078 * L, 0.34, 12), [x, 0.25, 0]);
+        add('belt', new THREE.CylinderGeometry(0.096 * L, 0.092 * L, 0.05, 12), [x, 0.43, 0]);
       }
-      // Thigh and knee, angled slightly outward for a wide, heavy stance.
-      // Gi pants are baggy, so the thighs are wider.
-      const baggy = primal ? 1.32 : 1.08;
-      add(legRole, new THREE.CapsuleGeometry(0.115 * L * baggy, 0.32, 4, 10), [0.13 * s, 0.72, 0], [0, 0, -0.07 * s]);
-      add(legRole, new THREE.SphereGeometry(0.105 * L * baggy, 10, 8), [0.135 * s, 0.5, 0.01]);
     }
 
-    // Pelvis, waist, chest: a strong V-taper.
-    add(legRole, new THREE.CapsuleGeometry(0.16, 0.06, 4, 12), [0, 0.98, 0], [0, 0, 0], [1.2 * w * (female ? 1.15 : 1), 1, 0.85 * d]);
-    add(o === 'tank' ? 'armor' : topRole, new THREE.CapsuleGeometry(0.15, 0.12, 4, 12), [0, 1.12, 0], [0, 0, 0], [1.05 * w, 1, 0.8 * d]);
-    add(topRole, new THREE.CapsuleGeometry(0.18, 0.16, 4, 14), [0, 1.3, 0], [0, 0, 0], [1.45 * w, 1, 0.8 * d]);
-    // Pecs (or bust) give the chest its shape under any outfit.
-    const chestRole = o === 'rokan' ? 'armor' : topRole;
+    // Bare chest: ink lines like an anime drawing (pec undersides, sternum,
+    // six-pack grid, outer ab edges) so the muscles read even in flat light.
     if (primal && !female) {
-      // Bare torso: six-pack and obliques
-      for (let r = 0; r < 3; r++) {
-        for (const s of [-1, 1]) add('skinDetail', new THREE.SphereGeometry(0.04, 8, 6), [0.042 * s * w, 1.2 - r * 0.07, 0.112 * d], [0, 0, 0], [1.05, 0.75, 0.45]);
-      }
-      for (const s of [-1, 1]) add('skinDetail', new THREE.CapsuleGeometry(0.035, 0.12, 3, 6), [0.13 * s * w, 1.12, 0.06 * d], [0, 0, 0.12 * s], [1, 1, 0.6]);
-    }
-    if (female) {
-      add(chestRole, new THREE.SphereGeometry(0.085, 10, 8), [0, 1.33, 0.1 * d], [0, 0, 0], [2.0, 0.9, 0.9]);
-    } else {
-      // Bare chests get flatter, squarer pecs; muscle details skip the outline.
-      const bare = chestRole === 'skin';
+      const ink = (pts, wid) => push('line', ribbon(pts.map(([y, a]) => torsoPoint(y, a, { ...P, offset: 0.0015 }, new THREE.Vector3())), wid));
+      const seq = (n, fn) => Array.from({ length: n + 1 }, (_, i) => fn(i / n));
       for (const s of [-1, 1]) {
-        add(bare ? 'skinDetail' : chestRole, new THREE.SphereGeometry(0.11, 10, 8), [0.095 * w * s, bare ? 1.37 : 1.36, bare ? 0.095 * d : 0.1 * d], [0, 0, bare ? -0.12 * s : 0], bare ? [1.36 * w, 0.51, 0.35 * d] : [1.15 * w, 0.8, 0.55 * d]);
+        ink(seq(12, (t) => [1.305 + 0.075 * t ** 1.8, s * (0.06 + 0.78 * t)]), 0.007);
+        ink(seq(8, (t) => [1.07 + 0.2 * t, s * (0.52 - 0.12 * t)]), 0.004);
       }
+      ink(seq(6, (t) => [1.33 + 0.07 * t, 0]), 0.004);
+      ink(seq(10, (t) => [1.08 + 0.2 * t, 0]), 0.004);
+      for (const y of [1.2, 1.137]) ink(seq(8, (t) => [y - 0.006 * Math.sin(Math.PI * t), -0.38 + 0.76 * t]), 0.0035);
     }
-    // Traps and thick neck.
-    for (const s of [-1, 1]) add('skin', new THREE.SphereGeometry(female ? 0.07 : 0.1, 10, 6), [0.12 * w * s, 1.5, -0.02], [0, 0, 0.35 * s], [1.3, 0.55, 0.9]);
-    add('skin', new THREE.CylinderGeometry(female ? 0.06 : 0.075, female ? 0.07 : 0.09, 0.16, 10), [0, 1.53, 0]);
 
     // Belt with buckle (or a thick tied sash for the primal gi).
     if (primal) {
-      add('armor', raggedTube(0.2, 0.23, 0.17, 18, 0.03), [0, 0.92, 0], [0, 0, 0], [1.2 * w, 1, 0.9 * d]);
-      add('belt', new THREE.TorusGeometry(0.17, 0.045, 6, 18), [0, 1.03, 0], [Math.PI / 2, 0, 0], [1.2 * w, 0.88 * d, 1]);
-      add('belt', new THREE.SphereGeometry(0.045, 8, 6), [0, 1.03, 0.16 * d], [0, 0, 0], [1.2, 1, 0.8]);
-      add('belt', new THREE.BoxGeometry(0.06, 0.34, 0.02), [0.03, 0.84, 0.17 * d], [-0.08, 0, 0.1]);
-      add('belt', new THREE.BoxGeometry(0.055, 0.28, 0.02), [-0.035, 0.87, 0.165 * d], [-0.08, 0, -0.14]);
+      push('belt', torsoShell(0.99, 1.075, P, (t) => 0.034 * bulge(t, 0.4) + 0.02));
+      const z = front(1.035, 0.05);
+      add('belt', new THREE.SphereGeometry(0.042, 10, 8), [0.02, 1.035, z], [0, 0, 0], [1.25, 1, 0.75]);
+      add('belt', new THREE.BoxGeometry(0.06, 0.3, 0.02), [0.04, 0.86, z - 0.012], [-0.12, 0, 0.1]);
+      add('belt', new THREE.BoxGeometry(0.055, 0.24, 0.02), [-0.01, 0.88, z - 0.012], [-0.12, 0, -0.14]);
     } else {
-      add('belt', new THREE.TorusGeometry(0.165, 0.032, 6, 18), [0, 1.04, 0], [Math.PI / 2, 0, 0], [1.2 * w, 0.85 * d, 1]);
-      add(o === 'gi' ? 'belt' : 'trim', new THREE.BoxGeometry(0.09, 0.07, 0.03), [0, 1.04, 0.15 * d]);
+      push('belt', torsoShell(1.005, 1.07, P, (t) => 0.02 * bulge(t, 0.3) + 0.004));
+      add(o === 'gi' ? 'belt' : 'trim', new THREE.BoxGeometry(0.09, 0.07, 0.03), [0, 1.04, front(1.04, 0.022)]);
     }
 
-    if (primal) {
-      for (const s of [-1, 1]) add('skin', new THREE.SphereGeometry(0.1, 10, 6), [0.29 * w * s, 1.43, 0], [0, 0, 0], [1.15 * L, 0.95, 1]);
-    } else if (o === 'rokan') {
-      // Titan battle armor: chest plate over the undersuit, shoulder guards,
-      // dark trim and waist flaps.
-      add('armor', new THREE.CapsuleGeometry(0.19, 0.12, 4, 14), [0, 1.31, 0.005], [0, 0, 0], [1.5 * w, 0.95, 0.86 * d]);
-      add('trim', new THREE.CylinderGeometry(0.205, 0.205, 0.035, 18, 1, true), [0, 1.17, 0], [0, 0, 0], [1.48 * w, 1, 0.86 * d]);
-      add('trim', new THREE.TorusGeometry(0.1, 0.022, 6, 16), [0, 1.48, 0.01], [Math.PI / 2, 0, 0], [1.3, 1, 1]);
+    if (o === 'rokan') {
+      // Titan battle armor: chest plate over the undersuit, trim at the
+      // lower edge, collar, shoulder guards and waist flaps.
+      push('armor', torsoShell(1.15, 1.52, P, (t) => 0.024 * bulge(t, 0.12) + 0.003));
+      push('trim', torsoShell(1.14, 1.185, P, (t) => 0.03 * bulge(t, 0.5) + 0.004));
+      add('trim', new THREE.TorusGeometry(0.085, 0.02, 6, 16), [0, 1.53, 0], [Math.PI / 2, 0, 0], [1.25 * Math.sqrt(w), 1, 1]);
       for (const s of [-1, 1]) {
-        add('armor', new THREE.SphereGeometry(0.13, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), [0.31 * w * s, 1.45, 0], [0, 0, -0.35 * s], [1.3, 0.8, 1.2]);
-        add('trim', new THREE.SphereGeometry(0.128, 12, 4, 0, Math.PI * 2, 0, Math.PI / 2), [0.31 * w * s, 1.435, 0], [0, 0, -0.35 * s], [1.36, 0.5, 1.26]);
+        add('armor', new THREE.SphereGeometry(0.13, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), [(side(1.42) + 0.02) * s, 1.47, 0], [0, 0, -0.45 * s], [1.15 * L, 0.7, 1.1 * L]);
+        add('trim', new THREE.SphereGeometry(0.128, 12, 4, 0, Math.PI * 2, 0, Math.PI / 2), [(side(1.42) + 0.02) * s, 1.455, 0], [0, 0, -0.45 * s], [1.2 * L, 0.45, 1.15 * L]);
         // Front and side waist flaps
-        add('armor', new THREE.BoxGeometry(0.15, 0.2, 0.03), [0.09 * s * w, 0.88, 0.15 * d], [-0.18, 0, 0.05 * s]);
-        add('armor', new THREE.BoxGeometry(0.03, 0.2, 0.16), [0.23 * s * w, 0.88, 0], [0, 0, 0.18 * s]);
+        add('armor', new THREE.BoxGeometry(0.15, 0.2, 0.03), [0.09 * s * w, 0.9, front(0.92, 0.03)], [-0.2, 0, 0.05 * s]);
+        add('armor', new THREE.BoxGeometry(0.03, 0.2, 0.16), [(side(0.92) + 0.03) * s, 0.9, 0], [0, 0, 0.18 * s]);
       }
     } else if (o === 'gi') {
       // V-neck undershirt and sash tails.
-      add('suit', new THREE.ConeGeometry(0.09, 0.18, 3), [0, 1.42, 0.13 * d], [Math.PI, 0, 0], [1, 1, 0.3]);
-      add('belt', new THREE.BoxGeometry(0.05, 0.16, 0.02), [0.06, 0.94, 0.16 * d], [0, 0, 0.12]);
-      add('belt', new THREE.BoxGeometry(0.05, 0.14, 0.02), [-0.04, 0.95, 0.16 * d], [0, 0, -0.1]);
-      for (const s of [-1, 1]) add('armor', new THREE.SphereGeometry(0.1, 10, 6), [0.29 * w * s, 1.43, 0], [0, 0, 0], [1.1 * L, 0.9, 1]);
+      add('suit', new THREE.ConeGeometry(0.075, 0.17, 3), [0, 1.43, front(1.43, 0.004)], [Math.PI, 0, 0], [1, 1, 0.3]);
+      add('belt', new THREE.BoxGeometry(0.05, 0.16, 0.02), [0.06, 0.94, front(0.95, 0.03)], [-0.1, 0, 0.12]);
+      add('belt', new THREE.BoxGeometry(0.05, 0.14, 0.02), [-0.04, 0.95, front(0.96, 0.03)], [-0.1, 0, -0.1]);
     } else if (o === 'jacket') {
-      add('armor', new THREE.TorusGeometry(0.1, 0.035, 6, 14), [0, 1.48, 0], [Math.PI / 2, 0, 0], [1.2, 1, 1]);
-      add('suit', new THREE.BoxGeometry(0.045, 0.28, 0.02), [0, 1.3, 0.15 * d]);
-      for (const s of [-1, 1]) add('armor', new THREE.SphereGeometry(0.1, 10, 6), [0.29 * w * s, 1.43, 0], [0, 0, 0], [1.1 * L, 0.9, 1]);
-    } else {
-      for (const s of [-1, 1]) add('skin', new THREE.SphereGeometry(0.1, 10, 6), [0.29 * w * s, 1.43, 0], [0, 0, 0], [1.1 * L, 0.9, 1]);
+      add('armor', new THREE.TorusGeometry(0.085, 0.03, 6, 14), [0, 1.52, 0], [Math.PI / 2, 0, 0], [1.25 * Math.sqrt(w), 1, 1]);
+      add('suit', new THREE.BoxGeometry(0.045, 0.3, 0.02), [0, 1.3, front(1.3, 0.004)], [-0.05, 0, 0]);
     }
 
     // Super Saiyan 4 style: red fur over the torso and a tail.
     if (f.body?.fur) {
-      add('fur', new THREE.CapsuleGeometry(0.19, 0.24, 4, 12), [0, 1.26, -0.01], [0, 0, 0], [1.5 * w, 1, 0.85 * d]);
+      push('fur', torsoShell(1.02, 1.5, { ...P, def: P.def * 0.6 }, (t) => 0.018 * bulge(t, 0.15) + 0.004));
     }
     if (f.body?.tail) {
-      const curve = new THREE.CatmullRomCurve3([
+      const tail = new THREE.CatmullRomCurve3([
         new THREE.Vector3(0, 0.95, -0.14), new THREE.Vector3(0, 0.75, -0.32), new THREE.Vector3(0.15, 0.6, -0.42),
         new THREE.Vector3(0.3, 0.75, -0.44), new THREE.Vector3(0.32, 0.95, -0.32),
       ]);
-      add('fur', new THREE.TubeGeometry(curve, 16, 0.04, 6, false), [0, 0, 0]);
+      add('fur', new THREE.TubeGeometry(tail, 16, 0.04, 6, false), [0, 0, 0]);
     }
 
     for (const [role, geos] of Object.entries(parts)) {
@@ -214,24 +244,28 @@ export class Avatar {
       const mesh = new THREE.Mesh(g, this.mats[role.replace('Detail', '')]);
       mesh.castShadow = true;
       this.staticGroup.add(mesh);
-      if (role !== 'trim' && !role.endsWith('Detail')) {
-        const out = new THREE.Mesh(g, outlineExtrudeMaterial(0.011));
+      if (role !== 'trim' && role !== 'line' && !role.endsWith('Detail')) {
+        const out = new THREE.Mesh(g, outlineExtrudeMaterial(0.009));
         out.userData.isOutline = true;
         out.raycast = () => {};
         this.staticGroup.add(out);
       }
     }
 
-    // Arms attach at the (build-dependent) shoulders.
+    // Arms: sculpted per build, attached at the shoulder socket just inside
+    // the torso's widest point so the deltoid caps the joint.
+    const armK = L * (o === 'rokan' || o === 'tank' ? 1.04 : 1);
     for (const side of ['left', 'right']) {
       const a = this.arms[side];
-      a.shoulder.set((female ? 0.26 : 0.3) * w * a.s, female ? 1.42 : 1.44, 0);
-      const k = L;
-      a.upper.scale.set(k * (o === 'rokan' || o === 'tank' ? 1.05 : 1), 1, k);
-      a.lower.scale.set(k, 1, k);
-      a.wrap.scale.set(k, 1, k);
-      a.fist.scale.set(k, k * 0.9, k * 1.15);
-      a.knuckle.scale.set(k, 1, k);
+      const outer = -a.s;
+      a.shoulder.set((side === 'left' ? 1 : -1) * (sideX(P, 1.42) + 0.035 * armK), female ? 1.42 : 1.43, -0.005);
+      setGeo(a.upper, upperArm(UPPER_ARM, armK, def, outer, female));
+      setGeo(a.lower, forearm(LOWER_ARM - 0.035, armK, def, outer, female));
+      setGeo(a.fist, new RoundedBoxGeometry(0.084 * armK, 0.092 * armK, 0.09 * armK, 2, 0.024 * armK));
+      const fingers = new RoundedBoxGeometry(0.088 * armK, 0.04 * armK, 0.07 * armK, 2, 0.016 * armK);
+      fingers.translate(0, 0.036 * armK, 0.016 * armK);
+      setGeo(a.knuckle, fingers);
+      a.wrap.scale.setScalar(armK);
     }
     this.poseArms();
   }
@@ -307,18 +341,27 @@ export class Avatar {
   }
 
   // ---- Arms (2-bone, posed with simple IK so the mirror copies the player) ------
+  // Geometry is sculpted in rebuildBody (it depends on the build); here we
+  // only create the meshes and their outlines.
   buildArms() {
     const m = this.mats;
     this.arms = {};
     for (const side of ['left', 'right']) {
       const s = side === 'left' ? 1 : -1; // avatar's left is +X
-      const upper = new THREE.Mesh(new THREE.CapsuleGeometry(0.07, 0.2, 4, 10), m.skin);
-      const lower = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.18, 4, 10), m.skin);
-      const wrap = new THREE.Mesh(new THREE.CylinderGeometry(0.068, 0.064, 0.12, 10), m.gloves);
-      const fist = new THREE.Mesh(new THREE.SphereGeometry(0.068, 12, 8), m.skin);
-      const knuckle = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.035, 10), m.gloves);
-      [upper, lower, fist].forEach((p) => { p.castShadow = true; this.body.add(p); addOutline(p, 0.05); });
-      this.body.add(wrap, knuckle);
+      const upper = new THREE.Mesh(new THREE.BufferGeometry(), m.skin);
+      const lower = new THREE.Mesh(new THREE.BufferGeometry(), m.skin);
+      const wrap = new THREE.Mesh(new THREE.CylinderGeometry(0.044, 0.041, 0.09, 12), m.gloves);
+      const fist = new THREE.Mesh(new THREE.BufferGeometry(), m.skin);
+      const knuckle = new THREE.Mesh(new THREE.BufferGeometry(), m.gloves);
+      for (const p of [upper, lower, fist, knuckle]) {
+        p.castShadow = true;
+        const out = new THREE.Mesh(p.geometry, outlineExtrudeMaterial(p === knuckle ? 0.005 : 0.008));
+        out.userData.isOutline = true;
+        out.raycast = () => {};
+        p.add(out);
+        p.userData.outline = out;
+      }
+      this.body.add(upper, lower, fist, knuckle, wrap);
       this.arms[side] = {
         s, upper, lower, wrap, fist, knuckle,
         shoulder: new THREE.Vector3(0.3 * s, 1.44, 0),
@@ -328,6 +371,8 @@ export class Avatar {
   }
 
   // Place arm segments for shoulder -> hand target with a simple 2-bone IK.
+  // Each segment is oriented so its biceps / forearm flexors face the inside
+  // of the elbow bend.
   poseArms() {
     const lu = UPPER_ARM;
     const ll = LOWER_ARM;
@@ -342,26 +387,24 @@ export class Avatar {
       d = Math.max(d, 0.08);
       // Elbow bends outward/down/back.
       const pole = tmpC.set(a.s * 0.6, -0.8, -0.4).normalize();
-      const dir = toT.clone().normalize();
+      const dir = _dir.copy(toT).normalize();
       const x = (lu * lu - ll * ll + d * d) / (2 * d);
       const h = Math.sqrt(Math.max(lu * lu - x * x, 0));
-      const perp = pole.sub(dir.clone().multiplyScalar(pole.dot(dir))).normalize();
-      const elbow = sh.clone().addScaledVector(dir, x).addScaledVector(perp, h);
-      this.placeSegment(a.upper, sh, elbow);
-      this.placeSegment(a.lower, elbow, tgt);
-      a.wrap.position.copy(elbow).lerp(tgt, 0.72);
+      const perp = pole.sub(_v1.copy(dir).multiplyScalar(pole.dot(dir))).normalize();
+      const elbow = _elbow.copy(sh).addScaledVector(dir, x).addScaledVector(perp, h);
+      const upDir = _v1.subVectors(elbow, sh).normalize();
+      const loDir = _v2.subVectors(tgt, elbow).normalize();
+      _hint.copy(loDir).add(_bias.set(0, 0.05, 0.3));
+      placePart(a.upper, sh, upDir, _hint);
+      _hint.copy(upDir).negate().add(_bias.set(0, -0.25, 0.15));
+      placePart(a.lower, elbow, loDir, _hint);
+      a.wrap.position.copy(elbow).addScaledVector(loDir, ll * 0.8);
       a.wrap.quaternion.copy(a.lower.quaternion);
       a.fist.position.copy(tgt);
       a.fist.quaternion.copy(a.lower.quaternion);
       a.knuckle.position.copy(tgt);
       a.knuckle.quaternion.copy(a.lower.quaternion);
     }
-  }
-
-  placeSegment(mesh, from, to) {
-    mesh.position.copy(from).add(to).multiplyScalar(0.5);
-    const dir = tmpA.subVectors(to, from).normalize();
-    mesh.quaternion.setFromUnitVectors(UP, dir);
   }
 
   // Set hand targets in avatar-root space and head look rotation.
@@ -389,6 +432,7 @@ export class Avatar {
     const female = c.body === 'female';
     const skin = SKIN_TONES[c.skin % SKIN_TONES.length].color;
     this.mats.skin.color.setHex(skin);
+    this.mats.line.color.setHex(skin).lerp(new THREE.Color(0x120804), 0.7);
     this.mats.scar.color.setHex(skin).lerp(new THREE.Color(0xe8b0a8), 0.55);
     this.mats.armor.color.setHex(paletteColor(c.armorColor));
     this.mats.suit.color.setHex(paletteColor(c.suitColor));
@@ -441,6 +485,40 @@ export class Avatar {
     });
   }
 }
+
+// Orient a +Y-built part: origin at `from`, pointing along `dir`, front toward `hint`.
+function placePart(mesh, from, dir, hint) {
+  partBasis(from, dir, hint, _basis);
+  _basis.decompose(mesh.position, mesh.quaternion, _s);
+}
+
+// Flat strip along a polyline on the body, tapered at both ends.
+function ribbon(pts, width) {
+  const pos = [];
+  const idx = [];
+  const t = new THREE.Vector3(); const n = new THREE.Vector3(); const sd = new THREE.Vector3();
+  pts.forEach((p, i) => {
+    t.subVectors(pts[Math.min(i + 1, pts.length - 1)], pts[Math.max(i - 1, 0)]).normalize();
+    n.set(p.x, 0, p.z).normalize();
+    sd.crossVectors(n, t).normalize().multiplyScalar((width / 2) * (0.25 + 0.75 * Math.sin((Math.PI * i) / (pts.length - 1))));
+    pos.push(p.x + sd.x, p.y + sd.y, p.z + sd.z, p.x - sd.x, p.y - sd.y, p.z - sd.z);
+    if (i) idx.push(2 * i - 2, 2 * i - 1, 2 * i, 2 * i - 1, 2 * i + 1, 2 * i);
+  });
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
+function setGeo(mesh, g) {
+  mesh.geometry.dispose();
+  mesh.geometry = g;
+  if (mesh.userData.outline) mesh.userData.outline.geometry = g;
+}
+
+const _side = new THREE.Vector3();
+const sideX = (p, y) => torsoPoint(y, Math.PI / 2, p, _side).x;
 
 // Open tube with a zig-zag bottom edge (ragged cloth hems).
 function raggedTube(rTop, rBottom, h, seg, tear) {
