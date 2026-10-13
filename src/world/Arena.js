@@ -81,6 +81,8 @@ export class Arena {
     this.buildBattleCrater();
     this.buildMountains();
     this.buildRockFormations();
+    this.buildBossArena();
+    this.buildBoulders();
     this.buildGate();
     this.buildClouds();
     this.buildTrees();
@@ -333,76 +335,128 @@ export class Arena {
   }
 
   buildMountains() {
-    // Overlapping eroded ridge masses, rather than pointed geometric cones.
-    // Keep them outside the gameplay area and let fog blend distant layers.
-    const near = [0x927b68, 0xa08a78, 0x877665];
-    const far = [0x879eb6, 0x9aafc5, 0x7f9db6];
-    for(let layer=0;layer<2;layer++) {
-      const count=layer===0?24:24;
-      for(let i=0;i<count;i++) {
-        const angle=(i+this.r()*.4)*Math.PI*2/count;
-        const distance=(layer===0?170:275)+(this.r()-.5)*42;
-        const x=Math.cos(angle)*distance,z=Math.sin(angle)*distance;
-        const height=(layer===0?45:80)+this.r()*(layer===0?68:85);
-        const radius=(layer===0?26:49)+this.r()*22;
-        const geo=erodedRockGeometry(radius,height,14,9,this.r()*1000);
-        const mat=toon((layer===0?near:far)[i%3],{flat:true});
-        const mountain=new THREE.Mesh(geo,mat);
-        mountain.position.set(x,terrainHeight(x,z)-5,z);
-        mountain.rotation.y=this.r()*Math.PI*2;
-        this.group.add(mountain);
+    // One continuous mountain range around the valley: a displaced ring of
+    // terrain (ridged noise) painted per vertex: grass on the gentle lower
+    // slopes, layered sandstone cliffs, grey rock higher up and snow on the
+    // peaks. Smooth normals + the toon ramp give painted anime shading, and
+    // the fog turns the far ridges into pale blue silhouettes.
+    const SEG = 256, RINGS = 52, R0 = 112, R1 = 395;
+    const pos = new Float32Array((SEG + 1) * (RINGS + 1) * 3);
+    const idx = [];
+    let k = 0;
+    for (let i = 0; i <= RINGS; i++) {
+      const t = i / RINGS;
+      const r = R0 + (R1 - R0) * Math.pow(t, 1.35);
+      for (let j = 0; j <= SEG; j++) {
+        const a = (j / SEG) * Math.PI * 2;
+        const x = Math.cos(a) * r, z = Math.sin(a) * r;
+        pos[k++] = x; pos[k++] = mountainHeight(x, z); pos[k++] = z;
       }
     }
+    for (let i = 0; i < RINGS; i++) {
+      for (let j = 0; j < SEG; j++) {
+        const a = i * (SEG + 1) + j, b = a + 1, c = a + SEG + 1, d = c + 1;
+        idx.push(a, b, c, b, d, c);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    const nrm = geo.attributes.normal;
+    const col = new Float32Array(pos.length);
+    const grass = new THREE.Color(0x63b844), grass2 = new THREE.Color(0x4f9f37);
+    const sandA = new THREE.Color(0xd09a62), sandB = new THREE.Color(0xb7774a), sandC = new THREE.Color(0xe2b37a);
+    const rockA = new THREE.Color(0x8c8fa0), rockB = new THREE.Color(0x767a8c);
+    const snow = new THREE.Color(0xf4f8ff);
+    const c = new THREE.Color();
+    for (let v = 0; v < pos.length / 3; v++) {
+      const x = pos[v * 3], y = pos[v * 3 + 1], z = pos[v * 3 + 2];
+      const ground = terrainHeight(x, z);
+      const up = y - ground;
+      const flat = nrm.getY(v);
+      const n = noise2(x * 0.05, z * 0.05);
+      // Sandstone strata: horizontal bands, slightly wavy.
+      const band = Math.floor((y + noise2(x * 0.02, z * 0.02) * 6) / 5.5) % 3;
+      c.copy(band === 0 ? sandA : band === 1 ? sandB : sandC);
+      // Higher up the rock turns grey-blue
+      c.lerp(n > 0.5 ? rockA : rockB, smooth(70, 115, y));
+      // Grass on gentle and low slopes
+      const g = smooth(0.42, 0.62, flat + (n - 0.5) * 0.2) * (1 - smooth(60, 105, up)) + (1 - smooth(4, 16, up));
+      c.lerp(n > 0.45 ? grass : grass2, Math.min(1, g));
+      // Snow on high, not too steep ground
+      c.lerp(snow, smooth(118, 140, y + n * 12) * smooth(0.3, 0.55, flat));
+      col[v * 3] = c.r; col[v * 3 + 1] = c.g; col[v * 3 + 2] = c.b;
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    const range = new THREE.Mesh(geo, toon(0xffffff, { vertexColors: true }));
+    range.name = 'mountains';
+    this.group.add(range);
   }
 
   buildRockFormations() {
-    const strata = STRATA.map((col) => toon(col, { flat: true }));
-    const capGrass = toon(0x6cb848, { flat: true });
-    // Irregular weathered sandstone columns, single continuous mesh each.
-    // Vertex heights and radial profiles are offset to avoid stacked drum shapes.
-    const pillar=(x,z,h,rad,grassTop)=>{
-      const geo=erodedRockGeometry(rad,h,12,8,this.r()*1000,true);
-      const m=new THREE.Mesh(geo,strata[Math.floor(this.r()*strata.length)]);
-      m.position.set(x,terrainHeight(x,z)-.7,z);
-      m.rotation.y=this.r()*Math.PI*2;
-      m.castShadow=h<23;
-      this.group.add(m);
-      if(grassTop){
-        const cap=new THREE.Mesh(new THREE.CylinderGeometry(rad*.65,rad*.72,.35,12),capGrass);
-        cap.position.set(x,terrainHeight(x,z)+h*.96,z);
-        this.group.add(cap);
-      }
-    };
+    // Classic Dragon Ball wasteland rock: tall layered sandstone spires and
+    // wide buttes with grassy tops. Each is one mesh of stacked strata bands
+    // with ledges between them (see spireGeometry).
     const spots = [
-      [-26, -20, 14, 2.2], [22, -30, 18, 2.6], [-38, 6, 11, 2.0], [36, 12, 16, 2.4], [-14, -52, 22, 3.0],
-      [16, -58, 26, 3.2], [48, -14, 12, 2.0], [-50, -34, 20, 2.8], [10, 44, 15, 2.4], [-22, 40, 18, 2.6],
-      [62, 34, 30, 4.0], [-70, 20, 34, 4.5], [40, -80, 40, 5.0], [-48, -90, 36, 4.5], [86, -40, 28, 3.6], [-90, -12, 26, 3.4],
+      [-30, -14, 14, 2.6], [26, -26, 18, 3.0], [-38, 6, 11, 2.6], [36, 12, 16, 3.0], [-34, -56, 22, 3.8],
+      [38, -52, 26, 4.0], [48, -14, 12, 2.8], [-50, -34, 20, 3.6], [10, 44, 15, 3.0], [-22, 40, 18, 3.4],
+      [62, 34, 30, 5.2], [-70, 20, 34, 5.6], [40, -80, 40, 6.5], [-48, -90, 36, 6.0], [86, -40, 28, 5.0], [-90, -12, 26, 4.6],
+      [-34, 66, 24, 4.4], [74, 70, 32, 5.5], [28, 88, 22, 4.0], [-82, -58, 30, 5.0],
     ];
-    spots.forEach(([x, z, h, rad], i) => pillar(x, z, h, rad, i % 3 === 0));
-    // Massive plateaus behind the smaller spires.
-    const mesas=[[95,40,14,18],[-105,55,18,22],[70,-105,16,20],[-80,-110,20,16],[125,-5,22,14],[-20,120,18,24]];
-    for(const [x,z,h,rad] of mesas){
-      const m=new THREE.Mesh(erodedRockGeometry(rad,h,18,7,this.r()*1000,true),strata[Math.floor(this.r()*strata.length)]);
-      m.position.set(x,terrainHeight(x,z)-1,z);
-      this.group.add(m);
-      const cap=new THREE.Mesh(new THREE.CylinderGeometry(rad*.81,rad*.84,.55,18),capGrass);
-      cap.position.set(x,terrainHeight(x,z)+h-.45,z);
-      this.group.add(cap);
-    }
-    // Stylized cliffs: angular boulder walls behind the boss gate
-    const cliff = toon(0xb98258, { flat: true });
-    const cliff2 = toon(0xa06c48, { flat: true });
-    for (let i = 0; i < 9; i++) {
-      const a = -Math.PI / 2 + (i - 4) * 0.13;
-      const r = 120 + this.r() * 10;
-      const x = Math.cos(a) * r;
-      const z = Math.sin(a) * r;
-      const m = new THREE.Mesh(new THREE.DodecahedronGeometry(14 + this.r() * 6, 0), i % 2 ? cliff : cliff2);
-      m.position.set(x, terrainHeight(x, z) + 6 + this.r() * 6, z);
-      m.scale.set(1.3, 1.6 + this.r() * 0.6, 0.9);
-      m.rotation.set(this.r(), this.r() * 3, this.r() * 0.3);
+    for (const [x, z, h, rad] of spots) {
+      const m = new THREE.Mesh(spireGeometry(rad, h, this.r() * 1000, { grass: this.r() < 0.55 }), toon(0xffffff, { vertexColors: true }));
+      m.position.set(x, terrainHeight(x, z) - 0.6, z);
+      m.rotation.y = this.r() * Math.PI * 2;
+      m.castShadow = h < 20;
       this.group.add(m);
     }
+    // Wide buttes (flat-topped plateaus) further out
+    const mesas = [[95, 40, 16, 16], [-105, 55, 20, 20], [70, -105, 18, 18], [-80, -110, 22, 15], [125, -5, 24, 13], [-20, 120, 20, 22], [100, 92, 18, 14]];
+    for (const [x, z, h, rad] of mesas) {
+      const m = new THREE.Mesh(spireGeometry(rad, h, this.r() * 1000, { grass: true, mesa: true }), toon(0xffffff, { vertexColors: true }));
+      m.position.set(x, terrainHeight(x, z) - 1, z);
+      m.rotation.y = this.r() * Math.PI * 2;
+      m.scale.set(1, 1, 0.65 + this.r() * 0.3);
+      this.group.add(m);
+    }
+  }
+
+  buildBossArena() {
+    // The boss battleground beyond the gate: a ring of huge jagged rock fangs
+    // and broken spires walling in the crater, so it reads as its own arena.
+    const c = new THREE.Vector3(0, 0, -24);
+    const vc = toon(0xffffff, { vertexColors: true });
+    // Canyon walls behind the gate
+    for (let i = 0; i < 4; i++) {
+      const a = -Math.PI / 2 + (i < 2 ? -0.45 - i * 0.25 : 0.45 + (i - 2) * 0.25);
+      const r = 84 + this.r() * 22;
+      const x = Math.cos(a) * r, z = Math.sin(a) * r;
+      const h = 26 + this.r() * 24;
+      const m = new THREE.Mesh(spireGeometry(6 + this.r() * 4, h, this.r() * 1000, { grass: this.r() < 0.5, mesa: true }), vc);
+      m.position.set(x, terrainHeight(x, z) - 1, z);
+      m.rotation.y = this.r() * Math.PI * 2;
+      m.scale.set(1.25, 1, 0.8);
+      this.group.add(m);
+    }
+    // Fangs: leaning rock spikes around the far half of the crater
+    for (let i = 0; i < 12; i++) {
+      const a = Math.PI + 0.25 + (i / 11) * (Math.PI - 0.5) + (this.r() - 0.5) * 0.12; // sides and back
+      const r = 15 + this.r() * 4;
+      const x = c.x + Math.cos(a) * r, z = c.z + Math.sin(a) * r * 0.9;
+      if (Math.abs(x) < 6 && z < -30) continue; // keep the gate clear
+      const h = 6 + this.r() * 7;
+      const m = new THREE.Mesh(spireGeometry(1.5 + this.r() * 0.9, h, this.r() * 1000, { spike: true }), vc);
+      m.position.set(x, terrainHeight(x, z) - 0.3, z);
+      // Lean away from the crater centre
+      m.rotation.set(0, Math.atan2(x - c.x, z - c.z), 0);
+      m.rotateX(0.2 + this.r() * 0.2);
+      m.castShadow = true;
+      this.group.add(m);
+    }
+  }
+
+  buildBoulders() {
     // Scattered boulders on the plains (detail)
     const boulderMats = [toon(0xb08a64, { flat: true }), toon(0x9a7655, { flat: true }), toon(0xa59a8a, { flat: true })];
     for (let i = 0; i < 26; i++) {
@@ -414,9 +468,9 @@ export class Arena {
       if (x < -2.5 && x > -14 && Math.abs(z) < 5) continue; // mirror house
       if (x > 6.5 && x < 11 && z > -3 && z < 7) continue; // training props
       const s = 0.4 + this.r() * 1.3;
-      const b = new THREE.Mesh(new THREE.DodecahedronGeometry(s, 0), boulderMats[i % 3]);
-      b.position.set(x, s * 0.35 + terrainHeight(x, z), z);
-      b.rotation.set(this.r(), this.r(), this.r());
+      const b = new THREE.Mesh(boulderGeometry(s, i * 3.7), boulderMats[i % 3]);
+      b.position.set(x, s * 0.2 + terrainHeight(x, z), z);
+      b.rotation.set(0, this.r() * 6, 0);
       b.castShadow = true;
       this.detailGroup.add(b);
     }
@@ -482,7 +536,7 @@ export class Arena {
     // Simple stylized trees in small groves on the hills (detail).
     const trunk = toon(0x7a5232);
     const leaves = [toon(0x3f9a3a, { flat: true }), toon(0x56b444, { flat: true })];
-    const groves = [[45, 25], [-42, -12], [30, -48], [-30, 55], [60, -20], [-60, 38]];
+    const groves = [[45, 25], [-42, -12], [30, -48], [-30, 55], [60, -20], [-60, 38], [20, 60], [-58, -60], [70, 5], [-12, 75]];
     for (const [gx, gz] of groves) {
       const n = 3 + Math.floor(this.r() * 4);
       for (let i = 0; i < n; i++) {
@@ -493,10 +547,16 @@ export class Arena {
         const t = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.28, h, 6), trunk);
         t.position.set(x, y + h / 2, z);
         this.detailGroup.add(t);
-        const crown = new THREE.Mesh(new THREE.IcosahedronGeometry(1.4 + this.r(), 0), leaves[i % 2]);
-        crown.position.set(x, y + h + 0.6, z);
-        crown.scale.y = 0.85;
-        this.detailGroup.add(crown);
+        // Crown: a few overlapping soft puffs, darker underneath
+        const cr = 1.2 + this.r() * 0.8;
+        for (let q = 0; q < 4; q++) {
+          const pr = cr * (q === 0 ? 1 : 0.62 + this.r() * 0.2);
+          const a2 = q * 2.1 + this.r();
+          const puff = new THREE.Mesh(new THREE.IcosahedronGeometry(pr, 1), q === 0 ? leaves[0] : leaves[1]);
+          puff.position.set(x + (q ? Math.cos(a2) * cr * 0.7 : 0), y + h + 0.4 + (q ? 0.35 * cr : 0), z + (q ? Math.sin(a2) * cr * 0.7 : 0));
+          puff.scale.y = 0.8;
+          this.detailGroup.add(puff);
+        }
       }
     }
   }
@@ -534,6 +594,29 @@ export class Arena {
     };
     make(1700, 8.5, 65, this.detailGroup, 0x4f9e33);
     make(2500, 8.5, 60, this.highGroup, 0x73bc49);
+    // Wildflowers: tiny white and yellow heads in loose patches (one draw each)
+    const flowers = (count, color) => {
+      const geo = new THREE.IcosahedronGeometry(0.07, 0);
+      geo.translate(0, 0.3, 0);
+      const inst = new THREE.InstancedMesh(geo, toon(color), count);
+      const m = new THREE.Matrix4();
+      const p = new THREE.Vector3();
+      let i = 0, guard = 0;
+      while (i < count && guard++ < count * 30) {
+        const a = this.r() * Math.PI * 2, r = 9 + this.r() * 50;
+        p.set(Math.cos(a) * r, 0, Math.sin(a) * r);
+        if (noise2(p.x * 0.09 + 5, p.z * 0.09) < 0.62) continue; // patches
+        if (Math.abs(p.x) < 2.8 && p.z < -5 && p.z > -42) continue;
+        if (Math.hypot(p.x, p.z + 24) < 10) continue;
+        p.y = terrainHeight(p.x, p.z);
+        m.makeTranslation(p.x, p.y, p.z);
+        inst.setMatrixAt(i++, m);
+      }
+      inst.count = i;
+      this.detailGroup.add(inst);
+    };
+    flowers(500, 0xfff6e0);
+    flowers(400, 0xffd23a);
   }
 
   buildFloatingRocks() {
@@ -663,40 +746,137 @@ export class Arena {
   }
 }
 
-// A tapered, asymmetric continuous rock surface with stepped erosion bands.
-// Replaces stacks of cylinders / repetitive cones while retaining modest Quest
-// geometry budgets. Uses indexed triangles and calculated normals.
-function erodedRockGeometry(radius,height,sides=12,rings=8,seed=0,mesa=false){
-  const random=(v)=>{const x=Math.sin(v*127.1+seed*17.17)*43758.5453;return x-Math.floor(x);};
-  const vertices=[],indices=[];
-  const samples=Array.from({length:sides},(_,j)=>.81+random(j+11)*.35);
-  for(let i=0;i<=rings;i++){
-    const t=i/rings;
-    const taper=mesa?(t>.83?.83:.97-.12*t):(1-.63*Math.pow(t,1.65));
-    const band=1+.08*Math.sin(t*height*.65+seed);
-    for(let j=0;j<sides;j++){
-      const a=2*Math.PI*j/sides;
-      const jitter=.965+.07*random(j*31+i*7);
-      const r=radius*taper*band*samples[j]*jitter;
-      vertices.push(Math.cos(a)*r+(t*t)*radius*.10*Math.sin(seed),
-        t*height+(random(j+19)*.13-.065)*height/rings,
-        Math.sin(a)*r+(t*t)*radius*.08*Math.cos(seed));
+// Ridged multi-octave noise (0..1): sharp crests where value noise crosses 0.5.
+function ridged(x, z, oct = 4) {
+  let sum = 0, amp = 0.5, f = 1, w = 1;
+  for (let o = 0; o < oct; o++) {
+    let n = 1 - Math.abs(noise2(x * f, z * f) * 2 - 1);
+    n = n * n * w;
+    w = Math.min(1, n * 2);
+    sum += n * amp;
+    amp *= 0.5; f *= 2.03;
+  }
+  return sum;
+}
+
+// Mountain range height: rises out of the foothills past ~120 m, with low
+// passes between massifs and a higher, more distant second range.
+export function mountainHeight(x, z) {
+  const r = Math.hypot(x, z);
+  const base = terrainHeight(x, z);
+  const a = Math.atan2(z, x);
+  const massif = 0.35 + 0.65 * smooth(0.25, 0.75, noise2(Math.cos(a) * 2.2 + 11, Math.sin(a) * 2.2 + 5));
+  const near = smooth(118, 175, r) * massif * (22 + 135 * ridged(x * 0.010, z * 0.010));
+  const far = smooth(250, 330, r) * (60 + 150 * ridged(x * 0.007 + 40, z * 0.007));
+  return base - 0.6 + Math.max(near, far) + (r - 112) * 0.02;
+}
+
+// Layered rock spire / butte. Stacked strata bands, each with its own
+// vertices (so the ledges between bands stay crisp), wavy erosion grooves
+// down the sides, an overhanging cap and optionally a grassy top. Vertex
+// colors carry the strata, so many rocks merge into one draw call.
+//   opts.mesa  wide, flat-topped, nearly vertical walls
+//   opts.spike narrow, tapering to a point (boss arena fangs)
+const SPIRE_STRATA = [0xd29a62, 0xb9774b, 0xe3b47c, 0xa8693f];
+function spireGeometry(rad, h, seed, opts = {}) {
+  const rnd = mulberry32(Math.floor(seed) + 7);
+  const SIDES = opts.mesa ? 28 : 22;
+  const bands = opts.spike ? 3 : 3 + Math.floor(rnd() * 3);
+  const prof = Array.from({ length: SIDES }, (_, j) => 0.8 + 0.32 * noise2(j * (opts.mesa ? 0.45 : 0.6) + seed, seed * 0.37));
+  const pos = [], col = [], idx = [];
+  const color = new THREE.Color();
+  const lean = (rnd() - 0.5) * 0.12 * h;
+  const ring = (y, r, warp, colHex, shade = 1) => {
+    const start = pos.length / 3;
+    color.setHex(colHex).multiplyScalar(shade);
+    const t = y / h;
+    for (let j = 0; j < SIDES; j++) {
+      const a = (j / SIDES) * Math.PI * 2;
+      const groove = 1 + 0.07 * Math.sin(j * 2.7 + y * 0.9 + seed) * warp;
+      const rr = r * prof[j] * groove;
+      pos.push(Math.cos(a) * rr + lean * t * t, y, Math.sin(a) * rr);
+      col.push(color.r, color.g, color.b);
     }
+    return start;
+  };
+  const wall = (s0, s1) => {
+    for (let j = 0; j < SIDES; j++) {
+      const a = s0 + j, b = s0 + (j + 1) % SIDES, c = s1 + j, d = s1 + (j + 1) % SIDES;
+      idx.push(a, c, b, b, c, d);
+    }
+  };
+  const fan = (s0, y, colHex, up = true) => {
+    const ci = pos.length / 3;
+    let cx = 0, cz = 0;
+    for (let j = 0; j < SIDES; j++) { cx += pos[(s0 + j) * 3]; cz += pos[(s0 + j) * 3 + 2]; }
+    color.setHex(colHex);
+    pos.push(cx / SIDES, y, cz / SIDES); col.push(color.r, color.g, color.b);
+    for (let j = 0; j < SIDES; j++) {
+      const a = s0 + j, b = s0 + (j + 1) % SIDES;
+      if (up) idx.push(ci, b, a); else idx.push(ci, a, b);
+    }
+  };
+  let y = 0;
+  let r = rad;
+  for (let k = 0; k < bands; k++) {
+    const bh = (h / bands) * (0.75 + rnd() * 0.5) * (k === bands - 1 ? 1 : 1);
+    const y1 = k === bands - 1 ? h : Math.min(h, y + bh);
+    const taper = opts.spike ? 0.55 : opts.mesa ? 0.95 : 0.84 + rnd() * 0.08;
+    const r1 = r * taper;
+    const hex = SPIRE_STRATA[(k + Math.floor(seed)) % SPIRE_STRATA.length];
+    // A band: bottom ring, middle ring (bulge), top ring
+    const sub = 3;
+    let prev = ring(y, r, 1, hex, 0.92);
+    for (let q = 1; q <= sub; q++) {
+      const t = q / sub;
+      const yy = y + (y1 - y) * t;
+      const bulge = 1 + 0.05 * Math.sin(t * Math.PI);
+      const rr = (r + (r1 - r) * t) * bulge * (opts.spike && k === bands - 1 ? Math.max(0.02, 1 - t * 0.98) : 1);
+      const cur = ring(yy, rr, 1, hex, 0.92 + 0.08 * t);
+      wall(prev, cur);
+      prev = cur;
+    }
+    if (k < bands - 1) {
+      // Ledge: a sunlit flat step, then the next band starts a little inset.
+      const inset = opts.mesa ? 0.94 : 0.86 + rnd() * 0.06;
+      const ledge = ring(y1, r1 * inset, 1, hex, 1.12);
+      wall(prev, ledge);
+      r = r1 * inset;
+    } else if (!opts.spike) {
+      // Overhanging cap, then a flat (grassy) top
+      const lip = ring(y1 + 0.02 * h, r1 * 1.12, 0.6, hex, 1.05);
+      wall(prev, lip);
+      const topHex = opts.grass ? 0x6cbf4a : 0xd8a870;
+      const edge = ring(y1 + 0.03 * h, r1 * 1.1, 0.6, topHex);
+      wall(lip, edge);
+      fan(edge, y1 + 0.035 * h + (opts.mesa ? 0 : rad * 0.08), topHex);
+    } else {
+      fan(prev, y1, hex);
+    }
+    y = y1;
   }
-  for(let i=0;i<rings;i++)for(let j=0;j<sides;j++){
-    const a=i*sides+j,b=i*sides+(j+1)%sides,c=(i+1)*sides+j,d=(i+1)*sides+(j+1)%sides;
-    indices.push(a,b,c,b,d,c);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+// Weathered boulder: a noise-displaced icosphere with a flattened base.
+function boulderGeometry(size, seed) {
+  const geo = new THREE.IcosahedronGeometry(size, 1);
+  const p = geo.attributes.position;
+  const v = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i);
+    const n = noise2(v.x * 1.7 / size + seed, v.z * 1.7 / size + v.y * 0.9 / size);
+    v.multiplyScalar(0.8 + 0.4 * n);
+    v.y = Math.max(v.y, -size * 0.35) * 0.8;
+    p.setXYZ(i, v.x, v.y, v.z);
   }
-  // Top and bottom cap; capped formations cast sensible shadows.
-  const bottom=vertices.length/3;vertices.push(0,0,0);
-  const top=vertices.length/3;vertices.push(0,height,0);
-  for(let j=0;j<sides;j++){
-    indices.push(bottom,j,(j+1)%sides);
-    indices.push(top,rings*sides+(j+1)%sides,rings*sides+j);
-  }
-  const geo=new THREE.BufferGeometry();
-  geo.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));
-  geo.setIndex(indices);geo.computeVertexNormals();return geo;
+  geo.computeVertexNormals();
+  return geo;
 }
 
 // Push the middle vertices of a cone outward/inward a little for jagged peaks.
@@ -736,15 +916,17 @@ function mergeStatic(root, filter = () => true) {
     g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld));
     const mat = o.material;
     const vc = mat.isMeshToonMaterial && !mat.vertexColors && mat.emissive.getHex() === 0;
-    for (const name of Object.keys(g.attributes)) if (!['position', 'normal'].includes(name)) g.deleteAttribute(name);
+    // Already vertex-colored white toon meshes (terrain, rocks) join the same bucket.
+    const ownVC = mat.isMeshToonMaterial && mat.vertexColors && mat.color.getHex() === 0xffffff && mat.emissive.getHex() === 0 && g.attributes.color;
+    for (const name of Object.keys(g.attributes)) if (!['position', 'normal'].concat(ownVC ? ['color'] : []).includes(name)) g.deleteAttribute(name);
     if (vc) {
       const n = g.attributes.position.count;
       const col = new Float32Array(n * 3);
       for (let i = 0; i < n; i++) { col[i * 3] = mat.color.r; col[i * 3 + 1] = mat.color.g; col[i * 3 + 2] = mat.color.b; }
       g.setAttribute('color', new THREE.BufferAttribute(col, 3));
     }
-    const key = vc ? 'vc' : mat.uuid;
-    if (!buckets.has(key)) buckets.set(key, { material: vc ? sharedVC : mat, geos: [], cast: false, receive: false });
+    const key = vc || ownVC ? 'vc' : mat.uuid;
+    if (!buckets.has(key)) buckets.set(key, { material: vc || ownVC ? sharedVC : mat, geos: [], cast: false, receive: false });
     const b = buckets.get(key);
     b.geos.push(g);
     b.cast ||= o.castShadow;
