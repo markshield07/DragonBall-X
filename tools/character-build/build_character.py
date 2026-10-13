@@ -126,5 +126,10 @@ exec(open(os.path.join(HERE, 'parts.py')).read()) if STAGE != 'body' else None
 
 if STAGE in ('all', 'bake'):
     exec(open(os.path.join(HERE, 'bake.py')).read())
+if STAGE != 'body' and not os.environ.get('NO_FACE_NORMALS'):
+    # After the bake, so the bake still sees the real normals.
+    fw = anime_face_normals(body)
+    if STAGE in ('all', 'bake'):
+        flatten_face_normal_map(img, body, fw); img.save()
 bpy.ops.wm.save_as_mainfile(filepath=f'{OUT}/{CHAR}.blend')
 print('BODY verts', len(body.data.vertices), 'height', B[:NB, 2].max())

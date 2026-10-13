@@ -20,8 +20,11 @@ cam.data.ortho_scale = 0.32
 sc.collection.objects.link(cam)
 sc.camera = cam
 head = Vector((0, 0, max(v.co.z for v in bpy.data.objects['Body'].data.vertices) - 0.12))
-for v, d in {'face': (0, -2, 0), 'face34': (1.3, -1.5, 0)}.items():
-    cam.location = head + Vector(d)
-    cam.rotation_euler = (head - cam.location).to_track_quat('-Z', 'Y').to_euler()
+VIEWS = {'face': (0, -2, 0), 'face34': (1.3, -1.5, 0)}
+if os.environ.get('FACE_SIDE'): VIEWS['faceside'] = (2, 0, 0)
+for v, d in VIEWS.items():
+    tgt = head + Vector((0, -0.07, -0.02)) if v == 'faceside' else head
+    cam.location = tgt + Vector(d)
+    cam.rotation_euler = (tgt - cam.location).to_track_quat('-Z', 'Y').to_euler()
     sc.render.filepath = f'{OUT}/{TAG}-{v}.png'
     bpy.ops.render.render(write_still=True)

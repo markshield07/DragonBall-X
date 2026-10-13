@@ -92,6 +92,7 @@ def quad_fit(x, zz, y):
     return lambda X, Z: k[0] + k[1] * X + k[2] * Z + k[3] * X * X + k[4] * Z * Z + k[5] * X * Z
 
 EYE = {}
+EYE_REGION = np.zeros(NB, bool)
 for s in 'lr':
     sgn = 1 if s == 'l' else -1
     ev = group_verts(f'helper-{s}-eye')
@@ -118,6 +119,8 @@ for s in 'lr':
     BV[inner, 0] = xz[inner, 0]; BV[inner, 2] = xz[inner, 1]
     BV[inner, 1] = surf(BV[inner, 0], BV[inner, 2])
     EYE[s] = (sgn, ex, ez, surf)
+    EYE_REGION |= region
+exec(open(os.path.join(HERE, 'face.py')).read())
 for i, v in enumerate(body.data.vertices):
     v.co = BV[i]
 BN = vertex_normals(BV, BF)
@@ -249,6 +252,8 @@ for s in 'lr':
     if br.data.polygons[0].normal.y > 0: br.data.flip_normals()
     br.data.materials.append(material('Brow', srgb(0x0d0b0a)))
     bind_bone(br, 'head')
+
+face_mouth()
 
 # ---- Super Saiyan 4 fur: red fur over shoulders, arms, back and sides; chest and abs stay bare ----
 fur_w = 1 - wsum('head', 'neck_01', 'hand_l', 'hand_r')
