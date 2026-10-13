@@ -149,6 +149,9 @@ export class Mirror {
       this.avatar.powerUpPose(this.powerTime, tr.state === 'transforming' ? 1 : 0.55 + 0.45 * tr.charge);
     } else {
       this.avatar.setPose(L.group.visible ? toLocal(L.worldPos) : null, R.group.visible ? toLocal(R.worldPos) : null, headLocal);
+      // Your reflection's legs walk when you walk and hang when you fly.
+      const pb = g.playerBody;
+      this.avatar.stride?.(dt, pb?.speed || 0, g.player.flying, { fast: g.player.cruise || 0 });
     }
     // Aura mirrors the player's aura
     const pa = g.playerAura;

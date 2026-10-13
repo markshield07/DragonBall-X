@@ -161,7 +161,9 @@ export class DesktopInput {
       // F = slow motion (right stick click), G = fly (left stick click)
       R.stickPressDown = this.down('KeyF') || this.virtual.slowmo;
       L.stickPressDown = this.down('KeyG') || this.virtual.fly;
+      s.viewToggle = this.down('KeyP');
     } else {
+      s.viewToggle = false;
       R.stickPressDown = L.stickPressDown = false;
     }
     this.virtual.fly = this.virtual.slowmo = false;

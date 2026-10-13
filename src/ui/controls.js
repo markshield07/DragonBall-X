@@ -12,6 +12,7 @@ export const CONTROLS = {
   fly: { vr: 'Click left stick', desktop: 'G', what: 'Fly / land' },
   upDown: { vr: 'Right stick up / down', desktop: 'R up · V down', what: 'Fly up / down' },
   slowmo: { vr: 'Click right stick', desktop: 'F', what: 'Slow motion (Speed level 5)' },
+  view: { vr: null, desktop: 'P', what: 'Camera: inside / behind you' },
   menu: { vr: 'X button', desktop: 'Tab or M', what: 'Menu' },
   comfort: { vr: 'Y button', desktop: 'Esc', what: 'Settings / close menu' },
 };
@@ -23,4 +24,4 @@ export function key(game, action) {
 }
 
 // The rows of the How to Play page, in teaching order.
-export const HELP_ORDER = ['move', 'look', 'punch', 'fire', 'switchAttack', 'block', 'powerUp', 'transform', 'fly', 'upDown', 'slowmo', 'menu'];
+export const HELP_ORDER = ['move', 'look', 'punch', 'fire', 'switchAttack', 'block', 'powerUp', 'transform', 'fly', 'upDown', 'slowmo', 'view', 'menu'];

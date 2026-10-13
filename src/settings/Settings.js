@@ -44,6 +44,7 @@ export function defaultSettings() {
     battleDamage: true, // blood, cuts and bruises at low health
     dominantHand: 'right',
     mouseSensitivity: 1, // desktop look speed multiplier
+    cameraView: 'inside', // desktop: inside (first person) | behind (third person)
   };
 }
 

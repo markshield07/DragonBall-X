@@ -6,6 +6,7 @@ import { Arena } from '../world/Arena.js';
 import { World } from '../world/World.js';
 import { Destruction } from '../world/Destruction.js';
 import { Mirror } from '../world/Mirror.js';
+import { PlayerBody } from '../player/PlayerBody.js';
 import { XRInput } from '../input/XRInput.js';
 import { DesktopInput } from '../input/DesktopInput.js';
 import { Hands } from '../player/Hands.js';
@@ -89,6 +90,8 @@ export class Game {
     this.lastInput = null;
     this.mirror = new Mirror(this);
     this.mirror.setCharacter(this.character);
+    this.playerBody = new PlayerBody(this);
+    this.playerBody.setCharacter(this.character);
     this.hands.applyCharacter(this.character);
 
     this.hud = new HUD(this);
@@ -402,6 +405,7 @@ export class Game {
 
   applyCharacter() {
     this.mirror.setCharacter(this.character);
+    this.playerBody.setCharacter(this.character);
     this.hands.applyCharacter(this.character);
   }
 
@@ -809,6 +813,10 @@ export class Game {
     this.audio.beamCharge(this.player.beam.charging ? this.player.beam.charge : 0);
     this.updateActionButtons();
     this.mirror.update(dt);
+    // Your body: legs that walk and hang in the air; desktop P = behind view.
+    if (input.viewToggle && active) this.toggleView();
+    this.playerBody.update(dt);
+    if (this.playerBody.third) this.hands.setVisible(false);
     this.arena.update(dt);
     this.effects.eye.copy(this.player.headWorld);
     this.world.update(dt, this.player.headWorld, xr ? 3 : 6);
@@ -842,6 +850,15 @@ export class Game {
     this.renderShaken(dt, xr);
   }
 
+  // Desktop camera: inside your eyes, or behind you so you can see your warrior.
+  toggleView() {
+    if (this.isXR) return;
+    this.settings.cameraView = this.settings.cameraView === 'behind' ? 'inside' : 'behind';
+    this.applySettings();
+    this.updateActionButtons(true);
+    bus.emit('hud:message', { text: this.settings.cameraView === 'behind' ? 'Behind view: see your warrior! (P to switch)' : 'Inside view (P to switch)', color: '#4cc3ff' });
+  }
+
   freeze(t) { this.hitStop = Math.max(this.hitStop, Math.min(0.2, t)); }
   addShake(a) { this.shake = Math.min(0.35, Math.max(this.shake, a) + a * 0.25); }
 
@@ -857,7 +874,11 @@ export class Game {
       cam.rotation.z = Math.sin(t * 53) * a * 0.05;
     }
     this.shake = Math.max(0, this.shake - dt * (0.6 + this.shake * 4));
-    this.renderer.render();
+    // Behind view: the overlays (low-health edges, fades) ride on whichever
+    // camera is drawing.
+    const view = this.playerBody.third ? this.playerBody.placeViewCamera(cam) : cam;
+    for (const o of [this.damageOverlay.mesh, this.comfort.vignette, this.comfort.fadeSphere]) if (o && o.parent !== view) view.add(o);
+    this.renderer.render(view);
     if (on) { cam.position.sub(this.shakeOffset); cam.rotation.z = 0; }
   }
 
@@ -875,6 +896,7 @@ export class Game {
     this.btnFly = document.getElementById('btn-fly');
     this.btnSlow = document.getElementById('btn-slowmo');
     this.btnPowerDown = document.getElementById('btn-powerdown');
+    this.btnView = document.getElementById('btn-view');
     const press = (key) => (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -882,6 +904,12 @@ export class Game {
       this.desktopInput.requestLock();
     };
     this.btnFly?.addEventListener('click', press('fly'));
+    this.btnView?.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.toggleView();
+      this.desktopInput.requestLock();
+    });
     this.btnSlow?.addEventListener('click', press('slowmo'));
     this.btnPowerDown?.addEventListener('click', (e) => {
       e.preventDefault();
@@ -903,6 +931,7 @@ export class Game {
     const flying = this.player.flying;
     this.btnFly.innerHTML = `${flying ? 'LAND' : 'FLY'} <kbd>G</kbd>`;
     this.btnFly.classList.toggle('on', flying);
+    if (this.btnView) this.btnView.innerHTML = `${this.settings.cameraView === 'behind' ? 'INSIDE VIEW' : 'BEHIND VIEW'} <kbd>P</kbd>`;
     const sf = this.speedFocus;
     let label = 'SLOW-MO <kbd>F</kbd>';
     if (!sf.unlocked) label = `SLOW-MO <small>Speed Lv ${SLOWMO_UNLOCK_LEVEL}</small>`;

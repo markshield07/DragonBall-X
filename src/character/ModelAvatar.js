@@ -97,6 +97,8 @@ const _pole = new THREE.Vector3();
 const _e = new THREE.Vector3();
 const _m = new THREE.Matrix4();
 
+function expDamp(a, b, lambda, dt) { return b + (a - b) * Math.exp(-lambda * dt); }
+
 export class ModelAvatar {
   constructor(character, modelId = modelFor(character) || 'rokan') {
     this.modelId = modelId;
@@ -386,6 +388,64 @@ export class ModelAvatar {
       if (b[`foot_${s}`]) this.rotateRel(b[`foot_${s}`], _pq.setFromEuler(_eu.set(-knee * 0.45, 0, -0.04 * sgn)));
     }
     this.body.position.set(0, -(0.008 + 0.05 * hurt) * this.body.scale.x, 0);
+    this.stanced = true;
+    this.stanceFresh = true;
+  }
+
+  // Legs that move with you: a walk/run cycle on the ground, and legs hanging
+  // Dragon Ball style in the air (one knee bent, toes pointed, trailing back
+  // when you fly fast). Call every frame AFTER the stance / arm pose.
+  // speed: horizontal speed in m/s. back: moving backward (cycle runs in
+  // reverse). fast: 0..1 how hard you're flying (cruise).
+  stride(dt, speed, flying, { back = false, fast = 0 } = {}) {
+    if (!this.ready || this.power) return;
+    const b = this.bones;
+    const walkTarget = flying ? 0 : THREE.MathUtils.clamp(speed / 1.6, 0, 1);
+    this.walkAmt = expDamp(this.walkAmt || 0, walkTarget, walkTarget > (this.walkAmt || 0) ? 10 : 6, dt);
+    this.flyAmt = expDamp(this.flyAmt || 0, flying ? 1 : 0, 5, dt);
+    this.flyFast = expDamp(this.flyFast || 0, flying ? THREE.MathUtils.clamp(fast, 0, 1) : 0, 3, dt);
+    const w = this.walkAmt, f = this.flyAmt, ff = this.flyFast;
+    const fresh = this.stanceFresh;
+    this.stanceFresh = false;
+    if (w < 0.01 && f < 0.01) return;
+    // Running takes longer strides, not just faster ones.
+    const sc = this.body.scale.x;
+    const stepLen = 0.62 * sc * (1 + Math.min(speed, 12) / 5);
+    const run = THREE.MathUtils.clamp((speed - 3.2) / 3, 0, 1);
+    this.stepPhase = ((this.stepPhase || 0) + dt * Math.PI * Math.max(speed, 1.2 * w) / stepLen * (back ? -1 : 1)) % (Math.PI * 2);
+    this.flyTime = (this.flyTime || 0) + dt;
+    if (!fresh) {
+      for (const n of POWER_BONES) if (b[n]) b[n].quaternion.copy(this.rest.get(b[n]));
+      this.body.position.set(0, 0, 0);
+    }
+    this.model.updateMatrixWorld(true);
+    // Lean into fast flight like Superman, a little forward when running.
+    const lean = f * (0.08 + 0.32 * ff) + w * 0.1 * run;
+    if (b.spine_02 && lean > 0.01) this.rotateRel(b.spine_02, _pq.setFromAxisAngle(_X, lean));
+    const swingAmp = 0.42 + 0.3 * run;
+    for (const s of ['l', 'r']) {
+      const sgn = s === 'l' ? 1 : -1;
+      const ph = this.stepPhase + (s === 'r' ? Math.PI : 0);
+      const swing = Math.sin(ph);
+      // The knee lifts while that leg swings forward (cos > 0), and stays
+      // nearly straight while it carries your weight.
+      const lift = Math.max(0, Math.cos(ph));
+      let thigh = -swingAmp * w * swing;
+      let knee = w * (0.06 + (0.75 + 0.6 * run) * lift * lift);
+      let foot = w * (-0.22 * swing) - 0.35 * knee;
+      // Flying: legs hang loose, one knee tucked more than the other, gently
+      // swaying; trailing straighter behind you when cruising.
+      const sway = Math.sin(this.flyTime * 1.6 + sgn * 1.3) * 0.07;
+      const tuck = s === 'l' ? 1 : 0.45;
+      thigh += f * (-0.32 * tuck + 0.06 + sway + ff * (0.42 + 0.15 * tuck));
+      knee += f * ((0.35 + 0.5 * tuck) * (1 - 0.55 * ff) + sway * 0.5);
+      foot += f * (0.55 + 0.2 * ff);
+      if (b[`thigh_${s}`]) this.rotateRel(b[`thigh_${s}`], _pq.setFromEuler(_eu.set(thigh, 0, 0.03 * sgn * f)));
+      if (b[`calf_${s}`]) this.rotateRel(b[`calf_${s}`], _pq.setFromAxisAngle(_X, knee));
+      if (b[`foot_${s}`]) this.rotateRel(b[`foot_${s}`], _pq.setFromAxisAngle(_X, foot));
+    }
+    // Hips dip as each foot lands and rise as the legs pass.
+    this.body.position.y += -w * sc * (0.012 + (0.022 + 0.02 * run) * Math.abs(Math.sin(this.stepPhase)));
     this.stanced = true;
   }
 

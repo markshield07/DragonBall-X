@@ -275,7 +275,9 @@ export class Sparring {
     const guardL = _w.set(0.17 + 0.04 * hurt, 1.42 - 0.36 * hurt * hurt, 0.3 - 0.02 * hurt);
     const guardR = new THREE.Vector3(-0.14 - 0.06 * hurt, 1.36 - 0.42 * hurt * hurt, 0.34 - 0.06 * hurt);
     const a = this.avatar;
+    let posed = false;
     const pose = (l, r, slump = hp) => {
+      posed = true;
       a.clearPowerUp();
       a.stance?.(slump, now);
       a.arms.left.target.lerp(l, Math.min(1, dt * 14));
@@ -398,6 +400,12 @@ export class Sparring {
       }
       default: break;
     }
+    // Legs step as the fighter moves around you (sideways steps too).
+    const moved = _w.set(pos.x - (this.lastX ?? pos.x), 0, pos.z - (this.lastZ ?? pos.z));
+    this.lastX = pos.x; this.lastZ = pos.z;
+    const fwdY = this.group.rotation.y;
+    const along = moved.x * Math.sin(fwdY) + moved.z * Math.cos(fwdY);
+    if (posed && !this.kd.active) a.stride?.(dt, dt > 0 ? moved.length() / dt : 0, false, { back: along < -0.3 * moved.length() });
     if (!this.kd.active) a.root.position.y = 0;
     // Small sideways jolt on every hit, on top of the pose.
     if (this.wobble > 0) {

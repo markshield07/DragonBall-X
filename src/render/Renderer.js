@@ -66,7 +66,7 @@ export class Renderer {
     }
   }
 
-  render() {
-    this.renderer.render(this.scene, this.camera);
+  render(camera = this.camera) {
+    this.renderer.render(this.scene, camera);
   }
 }

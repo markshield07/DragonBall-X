@@ -374,8 +374,9 @@ export class GameMenu {
     const g = this.game;
     ui.text(g.isXR ? 'HOW TO PLAY · QUEST CONTROLLERS' : 'HOW TO PLAY · KEYBOARD & MOUSE', a.x, a.y + 30, { size: 30, color: COLORS.gold });
     const half = (a.w - 40) / 2;
-    const rows = Math.ceil(HELP_ORDER.length / 2);
-    HELP_ORDER.forEach((id, i) => {
+    const order = HELP_ORDER.filter((id) => (g.isXR ? CONTROLS[id].vr : CONTROLS[id].desktop));
+    const rows = Math.ceil(order.length / 2);
+    order.forEach((id, i) => {
       const c = CONTROLS[id];
       const x = a.x + (i < rows ? 0 : half + 40);
       const y = a.y + 56 + (i % rows) * 72;
@@ -431,6 +432,7 @@ export class GameMenu {
       ui.text('CONTROLS', right, y + 20, { size: 28, color: COLORS.gold });
       y += 30;
       row('Mouse speed', [[0.5, 'Slow'], [1, 'Normal'], [1.6, 'Fast']], s.mouseSensitivity ?? 1, (v) => { s.mouseSensitivity = v; }, right, half);
+      row('Camera', [['inside', 'Inside'], ['behind', 'Behind']], s.cameraView || 'inside', (v) => { s.cameraView = v; }, right, half);
       ui.wrap('VR comfort options (turning, teleport, seated play) show up here when you play in a headset.', right, y + 34, half, { size: 22 });
     }
   }
