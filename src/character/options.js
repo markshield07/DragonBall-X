@@ -55,6 +55,8 @@ export const BUILDS = [
   { id: 'athletic', name: 'Athletic', width: 0.94, limb: 0.92, chestDepth: 0.95, height: 1.0 },
   { id: 'muscular', name: 'Muscular', width: 1.0, limb: 1.0, chestDepth: 1.0, height: 1.0 },
   { id: 'heavy', name: 'Heavy Muscular', width: 1.12, limb: 1.16, chestDepth: 1.1, height: 1.02 },
+  { id: 'compact', name: 'Compact Fighter', width: 1.1, limb: 1.04, chestDepth: 1.04, height: 0.93 },
+  { id: 'towering', name: 'Towering Titan', width: 1.13, limb: 1.14, chestDepth: 1.1, height: 1.1 },
 ];
 
 // Frame: kept from Phase 1 so existing female warriors still load.
@@ -129,14 +131,31 @@ export function randomName() {
   return (a + b).slice(0, 12);
 }
 
+// Original shonen-style starter looks. These share one rig and all remain editable.
+// No licensed character models or costumes are used.
+export const CHARACTER_TEMPLATES = [
+  { id: 'rokan', name: 'Rokan - Primal Titan', description: 'Massive primal brawler', appearance: { body: 'male', build: 'heavy', skin: 7, hairStyle: 'rokan', hairColor: 0, eyeColor: 7, brows: 'fierce', expression: 'fierce', scar: 'none', outfit: 'primal', armorColor: 0, suitColor: 10, gloveColor: 1, bootColor: 1, beltColor: 1 } },
+  { id: 'kaizen', name: 'Kaizen - Star Hero', description: 'Wild-haired martial arts hero', appearance: { body: 'male', build: 'athletic', skin: 3, hairStyle: 'wild', hairColor: 0, eyeColor: 0, brows: 'focused', expression: 'bright', scar: 'none', outfit: 'gi', armorColor: 5, suitColor: 6, gloveColor: 6, bootColor: 6, beltColor: 6 } },
+  { id: 'vexar', name: 'Vexar - Proud Rival', description: 'Compact armored rival', appearance: { body: 'male', build: 'compact', skin: 2, hairStyle: 'prince', hairColor: 0, eyeColor: 3, brows: 'fierce', expression: 'fierce', scar: 'none', outfit: 'rokan', armorColor: 7, suitColor: 6, gloveColor: 3, bootColor: 3, beltColor: 4 } },
+  { id: 'toren', name: 'Toren - Time Wanderer', description: 'Layered-haired swordsman vibe', appearance: { body: 'male', build: 'lean', skin: 1, hairStyle: 'swordsman', hairColor: 6, eyeColor: 3, brows: 'sharp', expression: 'focused', scar: 'none', outfit: 'jacket', armorColor: 8, suitColor: 1, gloveColor: 1, bootColor: 1, beltColor: 4 } },
+  { id: 'ryuzen', name: 'Ryuzen - Young Prodigy', description: 'Fast fighter with short spikes', appearance: { body: 'male', build: 'athletic', skin: 4, hairStyle: 'short', hairColor: 0, eyeColor: 1, brows: 'sharp', expression: 'focused', scar: 'cheek', outfit: 'gi', armorColor: 9, suitColor: 1, gloveColor: 1, bootColor: 1, beltColor: 0 } },
+  { id: 'sora', name: 'Sora - Storm Guardian', description: 'Athletic long-haired energy fighter', appearance: { body: 'female', build: 'athletic', skin: 8, hairStyle: 'ponytail', hairColor: 6, eyeColor: 5, brows: 'sharp', expression: 'focused', scar: 'none', outfit: 'jacket', armorColor: 8, suitColor: 1, gloveColor: 2, bootColor: 1, beltColor: 3 } },
+];
+export function applyCharacterTemplate(character, id) {
+  const template = CHARACTER_TEMPLATES.find(t => t.id === id) || CHARACTER_TEMPLATES[0];
+  Object.assign(character, template.appearance, { templateId: template.id });
+  return character;
+}
+
 // The Rokan default look (matches the reference concept art).
 export function defaultCharacter() {
   return {
     version: 2,
+    templateId: 'rokan',
     name: randomName(),
     body: 'male',
-    build: 'muscular',
-    skin: 3, // Warm tan
+    build: 'heavy',
+    skin: 7, // Umber
     hairStyle: 'rokan',
     hairColor: 0, // Black
     eyeColor: 7, // Steel blue-grey
