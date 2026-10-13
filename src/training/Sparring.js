@@ -7,6 +7,7 @@ import { Aura } from '../fx/Aura.js';
 import { BattleDamage } from '../fx/BattleDamage.js';
 import { CHARACTER_TEMPLATES, defaultCharacter } from '../character/options.js';
 import { glowMaterial } from '../render/toon.js';
+import { Knockdown } from '../combat/Knockdown.js';
 
 // Sparring partner difficulty. Higher levels attack faster, block and dodge
 // more, hit harder and give more XP. Master sparring partners go Super Saiyan.
@@ -46,9 +47,11 @@ export class Sparring {
     this.wins = 0;
     this.knock = new THREE.Vector3();
     this.center = new THREE.Vector3();
+    this.kd = new Knockdown(game);
     this.target = {
       id: 'sparring', team: 'enemy',
-      active: () => this.group.visible && this.state !== 'down',
+      // Can be juggled while flying through the air, not while lying down.
+      active: () => this.group.visible && this.state !== 'down' && !this.kd.grounded,
       sphere: () => {
         this.center.copy(this.group.position);
         this.center.y += 1.25 * this.scale;
@@ -109,6 +112,8 @@ export class Sparring {
     this.timer = 1.8;
     this.cooldown = 2.5;
     this.knock.set(0, 0, 0);
+    this.kd.phase = 'none';
+    this.kd.tilt = 0;
     this.group.position.set(0, this.player.groundY(), -2.4);
     this.wounds?.reset();
   }
@@ -122,7 +127,7 @@ export class Sparring {
     // Dodge incoming ki blasts / block punches based on difficulty.
     if (hit.kind !== 'punch' && hit.kind !== 'beam' && ['idle', 'recover'].includes(this.state) && Math.random() < L.dodge) {
       this.dodge();
-      return;
+      return 'dodged';
     }
     const facing = this.state === 'block' || (['idle'].includes(this.state) && Math.random() < L.block);
     if (facing && hit.kind === 'punch' && !hit.finisher) {
@@ -146,7 +151,17 @@ export class Sparring {
     } else if (hit.kind !== 'beam' || Math.random() < 0.2) {
       g.training.sessionXp += g.progress.addXp('ki', (hit.charged ? 4 : 2) * xpK, 'spar-ki');
     }
-    if (this.health <= 0) { this.knockDown(); return; }
+    this.wobble = Math.min(1, (this.wobble || 0) + 0.5 + (hit.power || 0.4) * 0.5);
+    if (this.health <= 0) { this.knockDown(hit.dir); return; }
+    const heavy = hit.finisher || hit.sphere || (hit.charged && (hit.energy || 0) > 1.1) || (hit.kind === 'punch' && hit.power > 0.9);
+    if (heavy && this.state !== 'knocked' && (hit.finisher || hit.sphere || Math.random() < 0.6)) {
+      this.fistGlow.material.opacity = 0;
+      this.kd.start(hit.dir, hit.sphere ? 1.1 : hit.finisher ? 0.8 : 0.6, { lie: 0.6 });
+      this.knock.set(0, 0, 0);
+      g.effects.impact(this.center.clone(), 0xffffff, 1);
+      this.enter('knocked', 0);
+      return;
+    }
     if (['windup', 'idle', 'approach'].includes(this.state) && (hit.power > 0.6 || hit.finisher || Math.random() < 0.25)) {
       this.fistGlow.material.opacity = 0;
       this.enter('hitReact', 0.35);
@@ -164,9 +179,12 @@ export class Sparring {
     this.enter('recover', 0.3);
   }
 
-  knockDown() {
+  knockDown(dir = null) {
     const g = this.game;
-    this.enter('down', 3);
+    // Sent flying by the winning blow; stays down a moment, then gets back up.
+    this.kd.start(dir || this.group.getWorldDirection(_w).negate(), 1.1, { lie: 1.6 });
+    this.knock.set(0, 0, 0);
+    this.enter('down', 0);
     this.fistGlow.material.opacity = 0;
     this.wins += 1;
     const id = (this.shadow ? 'shadow-' : '') + this.level.id;
@@ -194,7 +212,7 @@ export class Sparring {
     this.cooldown -= dt;
     this.wounds.update(dt, this.health / this.maxHealth);
     // Face the player
-    if (this.state !== 'down') {
+    if (this.state !== 'down' && !this.kd.active) {
       const want = Math.atan2(head.x - pos.x, head.z - pos.z);
       let d = want - this.group.rotation.y;
       d = Math.atan2(Math.sin(d), Math.cos(d));
@@ -204,7 +222,7 @@ export class Sparring {
       pos.addScaledVector(this.knock, dt * 3);
       this.knock.multiplyScalar(Math.exp(-dt * 6));
     }
-    pos.y = damp(pos.y, this.player.groundY(), 4, dt);
+    if (this.kd.active) { this.knock.set(0, 0, 0); this.kd.update(dt, pos); } else pos.y = damp(pos.y, this.player.groundY(), 4, dt);
     // Slow health recovery between exchanges.
     if (this.state !== 'down') this.health = Math.min(this.maxHealth, this.health + dt * 2);
 
@@ -289,7 +307,7 @@ export class Sparring {
       }
       case 'hitReact': {
         pose(guardL, guardR);
-        a.root.rotation.x = -0.25 * Math.max(0, this.timer / 0.35);
+        a.root.rotation.x = -0.32 * Math.sin(Math.PI * Math.min(1, 1 - this.timer / 0.35)) - 0.1 * Math.max(0, this.timer / 0.35);
         if (this.timer <= 0) { this.cooldown = Math.max(this.cooldown, 0.5); this.enter('idle', 0.2); }
         break;
       }
@@ -299,12 +317,15 @@ export class Sparring {
         if (this.timer <= 0) this.enter('idle', 0.2);
         break;
       }
+      case 'knocked': {
+        this.ragdollPose(dt);
+        if (!this.kd.active) { this.cooldown = Math.max(this.cooldown, 0.8); this.enter('idle', 0.2); }
+        break;
+      }
       case 'down': {
-        // Takes a knee, then gets back up for another round.
-        a.root.rotation.x = damp(a.root.rotation.x, 0, 4, dt);
-        pose(new THREE.Vector3(0.25, 1.0, 0.25), new THREE.Vector3(-0.25, 1.0, 0.25));
-        a.root.position.y = damp(a.root.position.y, this.timer > 0.8 ? -0.45 : 0, 4, dt);
-        if (this.timer <= 0) {
+        // Flies, hits the dirt, lies there, then gets back up for another round.
+        this.ragdollPose(dt);
+        if (!this.kd.active) {
           a.root.position.y = 0;
           this.health = this.maxHealth;
           this.wounds.reset();
@@ -316,11 +337,31 @@ export class Sparring {
       }
       default: break;
     }
-    if (this.state !== 'down') a.root.position.y = 0;
+    if (!this.kd.active) a.root.position.y = 0;
+    // Small sideways jolt on every hit, on top of the pose.
+    if (this.wobble > 0) {
+      this.wobble = Math.max(0, this.wobble - dt * 5);
+      a.root.rotation.z = Math.sin(this.wobble * 9) * 0.06 * this.wobble;
+    } else a.root.rotation.z = 0;
     if (this.powerFx) this.powerFx.update(dt, this.group.position, this.state === 'powerUp' ? 0.8 * g.visualIntensity : 0, this.shadow ? 0x9a6aff : 0xdcc9a8);
     const r = Math.hypot(pos.x, pos.z);
     if (r > 25) { pos.x *= 25 / r; pos.z *= 25 / r; }
     this.aura.update(dt, g.renderer.camera, g.visualIntensity * 0.6);
+  }
+
+  ragdollPose(dt) {
+    const a = this.avatar;
+    const kd = this.kd;
+    const up = kd.phase === 'getUp' && kd.t > 0.2;
+    const l = up ? new THREE.Vector3(0.22, 1.1, 0.3) : new THREE.Vector3(0.55, 1.8, -0.15);
+    const r = up ? new THREE.Vector3(-0.22, 1.1, 0.3) : new THREE.Vector3(-0.55, 1.75, -0.1);
+    a.clearPowerUp();
+    a.arms.left.target.lerp(l, Math.min(1, dt * 8));
+    a.arms.right.target.lerp(r, Math.min(1, dt * 8));
+    a.head.quaternion.identity();
+    a.poseArms();
+    a.root.rotation.x = kd.tilt;
+    a.root.position.y = kd.lift(0.12);
   }
 
   chooseAttack(dist) {

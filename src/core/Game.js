@@ -98,6 +98,9 @@ export class Game {
     this.autosaveTimer = 0;
     this.resultTimer = 0;
     this.clock = new THREE.Clock();
+    this.hitStop = 0; // brief freeze of the enemy on heavy impacts
+    this.shake = 0; // desktop camera shake (VR gets controller rumble instead)
+    this.shakeOffset = new THREE.Vector3();
     this.wireEvents();
     this.setupActionButtons();
     this.applySettings();
@@ -512,6 +515,9 @@ export class Game {
       this.haptic(h.hand, 0.35 + 0.65 * h.power, 40 + 60 * h.power);
       const col = transformed ? 0xffd23a : 0xffffff;
       this.effects.flash(h.point, col, 0.12 + 0.3 * power, 0.12);
+      this.effects.impact(h.point, transformed ? 0xffe680 : 0xffffff, 0.25 + 0.45 * power + (h.finisher ? 0.35 : 0));
+      this.freeze(0.03 + 0.06 * power + (h.finisher ? 0.1 : 0));
+      this.addShake(0.02 + 0.05 * power + (h.finisher ? 0.06 : 0));
       this.effects.burst(h.point, transformed ? 0xffcc33 : 0xfff2cc, Math.round(6 + 16 * power), 1.5 + 3 * power, 0.04 + 0.04 * power, 0.35);
       if (power > 0.55 || h.finisher) {
         this.effects.ring(h.point, col, { maxRadius: 0.5 + power, duration: 0.3, vertical: true, normal: h.dir, opacity: 0.6 });
@@ -528,7 +534,19 @@ export class Game {
       this.audio.kiBlast(b.power, b.charged);
       this.haptic(b.hand, b.charged ? 0.8 : 0.3, b.charged ? 120 : 40);
     });
-    bus.on('projectile:explode', (e) => this.audio.explosion(e.charged ? 0.6 : 0.15));
+    bus.on('projectile:explode', (e) => this.audio.explosion(clamp(0.1 + 0.35 * (e.energy ?? 0.5), 0.12, 1)));
+    bus.on('blast:hit', (h) => {
+      this.effects.impact(h.point, 0xffffff, 0.3 + 0.35 * (h.energy || 0.5));
+      if (h.charged || h.sphere) this.freeze(0.05 + 0.04 * (h.energy || 1));
+    });
+    // Explosions shake the camera (desktop) or rumble the controllers (VR), less with distance.
+    bus.on('fx:shake', ({ position, amount }) => {
+      const d = position.distanceTo(this.player.headWorld);
+      const k = amount / (1 + d * d * 0.03);
+      if (k < 0.01) return;
+      this.addShake(k);
+      if (k > 0.04) { this.haptic('left', clamp(k * 4, 0.15, 1), 40 + 200 * k); this.haptic('right', clamp(k * 4, 0.15, 1), 40 + 200 * k); }
+    });
     bus.on('ki:empty', () => bus.emit('hud:message', { text: 'Not enough ki! Power up (both grips / Space)', color: '#4cc3ff' }));
     bus.on('attack:selected', (a) => bus.emit('hud:message', { text: `Equipped: ${a.attack.name}`, color: '#4cc3ff' }));
     bus.on('player:hit', (h) => {
@@ -542,6 +560,7 @@ export class Game {
         this.progress.addXp('stamina', 2, 'block');
       }
       this.effects.burst(h.point, h.blocked ? 0x4cc3ff : 0xff5a5a, 10, 2, 0.05, 0.3);
+      if (!h.blocked) this.addShake(0.05 + clamp(h.damage / 150, 0, 0.12));
       if (!h.blocked && this.settings.battleDamage !== false) {
         const frac = this.player.health / this.progress.maxHealth();
         this.damageOverlay.flash(clamp(0.35 + h.damage / 25, 0.35, 1));
@@ -712,7 +731,10 @@ export class Game {
     }
     this.player.updateFiring(dt, input, this.hands, active && this.player.alive);
     // Slow motion slows only enemies and their attacks; you keep full speed.
-    const ets = this.speedFocus.update(dt, active && this.player.alive);
+    let ets = this.speedFocus.update(dt, active && this.player.alive);
+    // Hit-stop: on a heavy blow the enemy freezes for a few frames (you don't,
+    // so it never feels like lag in VR).
+    if (this.hitStop > 0) { this.hitStop -= dt; ets *= 0.04; }
     this.arena.slow = clamp((1 - ets) / 0.8, 0, 1);
     if (!paused) {
       this.player.updateResources(dt, { charging: this.transformation.state === 'charging' });
@@ -729,6 +751,7 @@ export class Game {
     this.updateActionButtons();
     this.mirror.update(dt);
     this.arena.update(dt);
+    this.effects.eye.copy(this.player.headWorld);
     this.effects.update(dt);
     this.updatePlayerAuraPosition();
 
@@ -756,7 +779,26 @@ export class Game {
     if (this.autosaveTimer > 20) { this.autosaveTimer = 0; this.save(); }
     if (this.state === 'training' || this.state === 'boss') this.progress.data.playTime += dt;
 
+    this.renderShaken(dt, xr);
+  }
+
+  freeze(t) { this.hitStop = Math.max(this.hitStop, Math.min(0.2, t)); }
+  addShake(a) { this.shake = Math.min(0.35, Math.max(this.shake, a) + a * 0.25); }
+
+  // Desktop only: in a headset a moving camera causes motion sickness.
+  renderShaken(dt, xr) {
+    const cam = this.renderer.camera;
+    const on = !xr && this.shake > 0.002 && this.settings.screenShake !== false;
+    if (on) {
+      const a = this.shake;
+      const t = performance.now() * 0.001;
+      this.shakeOffset.set(Math.sin(t * 71) * a * 0.12, Math.sin(t * 89 + 1) * a * 0.1, 0);
+      cam.position.add(this.shakeOffset);
+      cam.rotation.z = Math.sin(t * 53) * a * 0.05;
+    }
+    this.shake = Math.max(0, this.shake - dt * (0.6 + this.shake * 4));
     this.renderer.render();
+    if (on) { cam.position.sub(this.shakeOffset); cam.rotation.z = 0; }
   }
 
   updatePlayerAuraPosition() {

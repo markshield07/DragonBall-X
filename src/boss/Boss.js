@@ -5,12 +5,14 @@ import { toon, toonUnique, addOutline, glowMaterial } from '../render/toon.js';
 import { Aura } from '../fx/Aura.js';
 import { BattleDamage } from '../fx/BattleDamage.js';
 import { BOSSES, bossById } from './bosses.js';
+import { Knockdown } from '../combat/Knockdown.js';
 
 export { BOSSES };
 
 const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
 const _line = new THREE.Line3();
+const _up = new THREE.Vector3(0, 1, 0);
 
 // One boss fighter that becomes any of the five villains (see bosses.js).
 //
@@ -36,6 +38,11 @@ export class Boss {
     this.phase = 0; // index of the last phase reached (0 = initial)
     this.speedK = 1;
     this.chest = new THREE.Vector3();
+    this.kd = new Knockdown(game);
+    // Additive hit flinch (a damped spring on the body's lean), layered on top
+    // of whatever pose the current state sets.
+    this.flinch = { x: 0, z: 0, vx: 0, vz: 0, ax: 0, az: 0 };
+    this.dodgeCd = 0;
     this.target = {
       id: 'boss', team: 'enemy',
       active: () => this.active && this.state !== 'intro' && this.state !== 'defeated' && this.state !== 'vanish',
@@ -244,6 +251,10 @@ export class Boss {
     this.timer = 0;
     this.cooldown = 2.2;
     this.knock.set(0, 0, 0);
+    this.kd.phase = 'none';
+    this.kd.tilt = 0;
+    Object.assign(this.flinch, { x: 0, z: 0, vx: 0, vz: 0, ax: 0, az: 0 });
+    this.dodgeCd = 0;
     this.group.visible = true;
     this.group.position.set(0, 9, -28);
     this.group.rotation.set(0, 0, 0);
@@ -311,6 +322,15 @@ export class Boss {
       }
       return;
     }
+    const ratio = this.powerRatio();
+    // Ki blasts can be dodged: a blur to the side and the blast flies on past
+    // (Combat then detonates it behind them).
+    const canDodge = ['idle', 'approach', 'recover', 'retreat', 'land'].includes(this.state);
+    if (hit.kind === 'blast' && canDodge && this.dodgeCd <= 0) {
+      const chance = clamp(0.35 / Math.pow(ratio, 0.3), 0.05, 0.45) * (hit.sphere ? 0.6 : 1) * (hit.charged ? 0.85 : 1);
+      this.dodgeCd = 0.9;
+      if (Math.random() < chance) { this.dodge(hit.dir); return 'dodged'; }
+    }
     const dmg = hit.damage * this.playerDamageScale();
     this.health = Math.max(0, this.health - dmg);
     this.drawBar();
@@ -318,7 +338,7 @@ export class Boss {
       g.effects.number(hit.point.clone().add(new THREE.Vector3(0, 0.3, 0)), Math.round(dmg), hit.finisher || hit.charged ? '#ffcc33' : '#ffffff', hit.finisher);
     }
     this.wounds.hit(hit.point, hit.dir, this.health / this.def.maxHealth, hit.power || 0.5);
-    const ratio = this.powerRatio();
+    this.addFlinch(hit.dir, (hit.kind === 'beam' ? 0.25 : 0.5 + (hit.power || 0.4)) * (hit.finisher ? 1.6 : 1));
     const strong = hit.finisher || hit.charged || (hit.power > 0.7 && ratio > 1);
     const kb = (hit.kind === 'punch' ? 1 : 0.6) * (0.4 + (hit.power || 0.4)) * clamp(Math.log10(ratio * 10 + 1), 0.25, 2.2) / Math.sqrt(this.def.scale / 1.18);
     _v.copy(hit.dir).setY(0).normalize();
@@ -336,9 +356,50 @@ export class Boss {
       this.enter('stagger', 0.45 + (strong ? 0.35 : 0));
       if (strong && ratio > 3 && Math.random() < 0.3) this.say(['Ngh! How are you this strong?!', 'Impossible…!', 'That power… it can\'t be!'][Math.floor(Math.random() * 3)]);
     }
+    // Big hits send them flying: finishers, Spirit Bombs, fully charged blasts.
+    if (this.health > 0 && !this.kd.active && !['intro', 'roar', 'vanish', 'appear', 'knockdown'].includes(this.state)) {
+      const heavy = hit.finisher || hit.sphere || (hit.charged && (hit.energy || 0) > 1.1) || (hit.kind === 'punch' && hit.power > 0.92 && ratio > 1.5);
+      // A finished combo or a Spirit Bomb always does; charged blasts and big
+      // punches do more often the stronger you are.
+      const chance = hit.sphere || hit.finisher ? 1 : clamp(0.45 + 0.3 * Math.log10(ratio * 2), 0.3, 0.9);
+      if (heavy && Math.random() < chance) this.knockDown(hit.dir, hit.sphere ? 1.4 : hit.finisher ? 1 : 0.8);
+    }
     const next = this.def.phases[this.phase];
-    if (next && this.health < this.def.maxHealth * next.at && this.health > 0) this.powerUpPhase(next);
-    if (this.health <= 0) this.defeat();
+    if (next && this.health < this.def.maxHealth * next.at && this.health > 0 && !this.kd.active) this.powerUpPhase(next);
+    if (this.health <= 0) this.defeat(hit);
+  }
+
+  addFlinch(dir, k) {
+    // Hit direction in the boss's own frame (it faces +z).
+    _w.copy(dir).setY(0).applyAxisAngle(_up, -this.group.rotation.y);
+    const S = Math.sqrt(this.def.scale / 1.18);
+    this.flinch.vx += _w.z * 6 * k / S;
+    this.flinch.vz -= _w.x * 4 * k / S;
+  }
+
+  knockDown(dir, power) {
+    const g = this.game;
+    this.endAttackVisuals();
+    this.knock.set(0, 0, 0);
+    this.kd.start(dir, power, { lie: 0.7, size: this.def.scale / 1.18 });
+    this.enter('knockdown', 0);
+    g.effects.impact(this.chest.clone(), 0xffffff, 1.2);
+    g.audio.punch(1, true);
+    if (Math.random() < 0.35) this.say(['Guh…!', 'Argh!', 'You little…!'][Math.floor(Math.random() * 3)]);
+  }
+
+  dodge(dir) {
+    const g = this.game;
+    _w.set(-dir.z, 0, dir.x).normalize();
+    if (Math.random() < 0.5) _w.negate();
+    this.knock.addScaledVector(_w, 4.5);
+    this.torso.getWorldPosition(this.chest);
+    // Afterimage: a burst of aura-coloured streaks where they stood.
+    for (let i = 0; i < 10; i++) g.effects.stream(this.chest.clone().add(_v.set(rand(-0.3, 0.3), rand(-0.8, 0.5), rand(-0.3, 0.3))), this.def.aura.color, { vy: 0, spread: 0.15, size: 0.14, life: 0.3 });
+    g.effects.dust(this.group.position.clone(), 0.5, 2);
+    g.audio.whoosh();
+    g.effects.number(this.chest.clone().add(_v.set(0, 0.6, 0)), 'DODGED', '#aab3d6');
+    this.enter('dodge', 0.25);
   }
 
   powerUpPhase(p) {
@@ -357,9 +418,12 @@ export class Boss {
     this.drawBar();
   }
 
-  defeat() {
+  defeat(hit = null) {
     const g = this.game;
     this.endAttackVisuals();
+    this.knock.set(0, 0, 0);
+    // The final blow sends them flying; they don't get up.
+    this.kd.start(hit?.dir || _v.set(-Math.sin(this.group.rotation.y), 0, -Math.cos(this.group.rotation.y)), 1.3, { lie: 99, size: this.def.scale / 1.18 });
     this.enter('defeated', 3.5);
     this.say(this.powerRatio() > 2 ? this.def.lines.loseStrong : this.def.lines.lose, '#ffb0b0');
     g.combat.clearProjectiles('enemy');
@@ -400,8 +464,13 @@ export class Boss {
     this.cooldown -= dt;
     this.wounds.update(dt, this.health / this.def.maxHealth);
     if (this.halo) this.halo.rotation.z += dt;
+    this.dodgeCd -= dt;
+    if (this.kd.active && this.state !== 'knockdown' && this.state !== 'defeated') { this.kd.phase = 'none'; this.kd.tilt = 0; this.body.position.y = 0; }
+    const fl = this.flinch;
+    this.body.rotation.x -= fl.ax;
+    this.body.rotation.z -= fl.az;
 
-    if (!['defeated', 'rush', 'vanish'].includes(this.state)) {
+    if (!['defeated', 'rush', 'vanish', 'knockdown'].includes(this.state)) {
       const want = Math.atan2(head.x - pos.x, head.z - pos.z);
       let d = want - this.group.rotation.y;
       d = Math.atan2(Math.sin(d), Math.cos(d));
@@ -411,7 +480,7 @@ export class Boss {
       pos.addScaledVector(this.knock, dt * 3);
       this.knock.multiplyScalar(Math.exp(-dt * 5));
     }
-    if (!['intro', 'megaCharge', 'land', 'slamUp', 'slamDown', 'defeated'].includes(this.state)) pos.y = damp(pos.y, groundY, 3, dt);
+    if (!['intro', 'megaCharge', 'land', 'slamUp', 'slamDown', 'defeated', 'knockdown'].includes(this.state)) pos.y = damp(pos.y, groundY, 3, dt);
 
     const arms = this.arms;
     const restArms = (k = 1) => {
@@ -711,6 +780,36 @@ export class Boss {
         }
         break;
       }
+      case 'dodge': {
+        restArms();
+        this.body.rotation.z = damp(this.body.rotation.z, 0, 10, dt);
+        if (this.timer <= 0) this.enter('idle', 0.15);
+        break;
+      }
+      // -- Knocked flying: launch, slam, bounce, skid, lie there, get up.
+      case 'knockdown': {
+        const kd = this.kd;
+        kd.update(dt, pos);
+        this.body.rotation.x = kd.tilt;
+        this.body.position.y = kd.lift(0.2 * this.def.scale);
+        const flail = kd.phase === 'getUp' ? 0 : 1;
+        arms.left.shoulder.rotation.z = damp(arms.left.shoulder.rotation.z, 1.2 * flail, 8, dt);
+        arms.right.shoulder.rotation.z = damp(arms.right.shoulder.rotation.z, -1.2 * flail, 8, dt);
+        for (const a of [arms.left, arms.right]) {
+          a.shoulder.rotation.x = damp(a.shoulder.rotation.x, flail ? -2.2 : -0.3, 6, dt);
+          a.elbow.rotation.x = damp(a.elbow.rotation.x, flail ? -0.3 : -1.2, 6, dt);
+        }
+        if (!kd.active) {
+          this.body.rotation.x = 0;
+          this.body.position.y = 0;
+          arms.left.shoulder.rotation.z = arms.right.shoulder.rotation.z = 0;
+          this.cooldown = Math.max(this.cooldown, 0.9);
+          const next = this.def.phases[this.phase];
+          if (next && this.health < this.def.maxHealth * next.at) this.powerUpPhase(next);
+          else this.enter('idle', 0.3);
+        }
+        break;
+      }
       case 'stagger': {
         this.body.rotation.x = damp(this.body.rotation.x, -0.35, 12, dt);
         arms.left.glow.material.opacity = arms.right.glow.material.opacity = 0;
@@ -734,8 +833,9 @@ export class Boss {
         break;
       }
       case 'defeated': {
-        this.body.rotation.x = damp(this.body.rotation.x, -1.4, 3, dt);
-        pos.y = damp(pos.y, this.player.groundY(), 4, dt);
+        this.kd.update(dt, pos);
+        this.body.rotation.x = this.kd.tilt;
+        this.body.position.y = this.kd.lift(0.2 * this.def.scale);
         if (this.timer < 1.2) this.group.scale.setScalar(Math.max(0.01, this.timer / 1.2));
         if (Math.random() < 0.3) g.effects.stream(pos.clone().add(new THREE.Vector3(rand(-0.5, 0.5), rand(0.5, 1.8), rand(-0.5, 0.5))), 0xffcc33, { vy: 2, size: 0.08 });
         if (this.timer <= 0) this.group.visible = false;
@@ -744,6 +844,15 @@ export class Boss {
       default:
         break;
     }
+    // Flinch spring, added on top of the pose (and removed again next frame).
+    fl.vx += (-140 * fl.x - 13 * fl.vx) * dt;
+    fl.vz += (-140 * fl.z - 13 * fl.vz) * dt;
+    fl.x += fl.vx * dt;
+    fl.z += fl.vz * dt;
+    fl.ax = this.state === 'knockdown' || this.state === 'defeated' ? 0 : clamp(fl.x, -0.6, 0.6);
+    fl.az = this.state === 'knockdown' || this.state === 'defeated' ? 0 : clamp(fl.z, -0.4, 0.4);
+    this.body.rotation.x += fl.ax;
+    this.body.rotation.z += fl.az;
     if (this.barrier.visible && this.state !== 'barrierUp') {
       this.barrierTime -= dt;
       if (this.barrierTime <= 0) this.barrier.visible = false;
