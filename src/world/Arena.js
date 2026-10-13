@@ -186,6 +186,35 @@ export class Arena {
     this.ground = ground;
   }
 
+  // Re-fits the valley floor after battle damage dug into it around (x, z):
+  // new heights, and scorched, churned earth where it sank.
+  refreshGround(x, z, radius) {
+    const geo = this.ground.geometry;
+    const pos = geo.attributes.position, col = geo.attributes.color;
+    const scorch = new THREE.Color(0x6e5440);
+    const c = new THREE.Color();
+    let touched = false;
+    for (let i = 0; i < pos.count; i++) {
+      const vx = pos.getX(i), vz = pos.getZ(i);
+      const d = Math.hypot(vx - x, vz - z);
+      if (d > radius + 1) continue;
+      const y = terrainHeight(vx, vz);
+      const drop = pos.getY(i) - y;
+      if (Math.abs(drop) <= 0.001) continue;
+      pos.setY(i, y);
+      if (drop > 0) {
+        c.setRGB(col.getX(i), col.getY(i), col.getZ(i)).lerp(scorch, Math.min(0.85, 0.3 + drop * 0.25));
+        col.setXYZ(i, c.r, c.g, c.b);
+      }
+      touched = true;
+    }
+    if (!touched) return;
+    geo.computeVertexNormals();
+    pos.needsUpdate = true;
+    col.needsUpdate = true;
+    geo.computeBoundingSphere();
+  }
+
   buildPlatform() {
     // Tournament-style stone training platform: the sparring circle where
     // the dummy, targets and boss fight happen. Floor height stays ~0.
@@ -311,6 +340,7 @@ export class Arena {
       for (const s of [-1, 1]) {
         const h = 2.2 + this.r() * 1.6;
         const m = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.65, h, 5), standing);
+        m.userData.piece = 'stone';
         m.position.set(s * (9.5 + this.r() * 1.5), h / 2 - 0.1, z);
         m.rotation.set((this.r() - 0.5) * 0.12, this.r() * 3, (this.r() - 0.5) * 0.12);
         m.castShadow = true;
@@ -331,6 +361,7 @@ export class Arena {
     ];
     for (const [x, z, h, rad] of spots) {
       const m = new THREE.Mesh(spireGeometry(rad, h, this.r() * 1000, { grass: this.r() < 0.55 }), toon(0xffffff, { vertexColors: true }));
+      m.userData.piece = 'spire';
       m.position.set(x, terrainHeight(x, z) - 0.6, z);
       m.rotation.y = this.r() * Math.PI * 2;
       m.castShadow = h < 20;
@@ -340,6 +371,7 @@ export class Arena {
     const mesas = [[95, 40, 16, 16], [-105, 55, 20, 20], [70, -105, 18, 18], [-80, -110, 22, 15], [125, -5, 24, 13], [-20, 120, 20, 22], [100, 92, 18, 14]];
     for (const [x, z, h, rad] of mesas) {
       const m = new THREE.Mesh(spireGeometry(rad, h, this.r() * 1000, { grass: true, mesa: true }), toon(0xffffff, { vertexColors: true }));
+      m.userData.piece = 'mesa';
       m.position.set(x, terrainHeight(x, z) - 1, z);
       m.rotation.y = this.r() * Math.PI * 2;
       m.scale.set(1, 1, 0.65 + this.r() * 0.3);
@@ -359,6 +391,7 @@ export class Arena {
       const x = Math.cos(a) * r, z = Math.sin(a) * r;
       const h = 26 + this.r() * 24;
       const m = new THREE.Mesh(spireGeometry(6 + this.r() * 4, h, this.r() * 1000, { grass: this.r() < 0.5, mesa: true }), vc);
+      m.userData.piece = 'mesa';
       m.position.set(x, terrainHeight(x, z) - 1, z);
       m.rotation.y = this.r() * Math.PI * 2;
       m.scale.set(1.25, 1, 0.8);
@@ -372,6 +405,7 @@ export class Arena {
       if (Math.abs(x) < 6 && z < -30) continue; // keep the gate clear
       const h = 6 + this.r() * 7;
       const m = new THREE.Mesh(spireGeometry(1.5 + this.r() * 0.9, h, this.r() * 1000, { spike: true }), vc);
+      m.userData.piece = 'spire';
       m.position.set(x, terrainHeight(x, z) - 0.3, z);
       // Lean away from the crater centre
       m.rotation.set(0, Math.atan2(x - c.x, z - c.z), 0);
@@ -394,6 +428,7 @@ export class Arena {
       if (x > 6.5 && x < 11 && z > -3 && z < 7) continue; // training props
       const s = 0.4 + this.r() * 1.3;
       const b = new THREE.Mesh(boulderGeometry(s, i * 3.7), boulderMats[i % 3]);
+      b.userData.piece = 'boulder';
       b.position.set(x, s * 0.2 + terrainHeight(x, z), z);
       b.rotation.set(0, this.r() * 6, 0);
       b.castShadow = true;
@@ -837,8 +872,10 @@ function mergeStatic(root, filter = () => true) {
       g.setAttribute('color', new THREE.BufferAttribute(col, 3));
     }
     const key = vc || ownVC ? 'vc' : mat.uuid;
-    if (!buckets.has(key)) buckets.set(key, { material: vc || ownVC ? sharedVC : mat, geos: [], cast: false, receive: false });
+    if (!buckets.has(key)) buckets.set(key, { material: vc || ownVC ? sharedVC : mat, geos: [], pieces: [], cast: false, receive: false });
     const b = buckets.get(key);
+    // Breakable pieces remember where their triangles land in the merged mesh.
+    if (o.userData.piece) b.pieces.push({ geo: b.geos.length, kind: o.userData.piece });
     b.geos.push(g);
     b.cast ||= o.castShadow;
     b.receive ||= o.receiveShadow;
@@ -849,6 +886,12 @@ function mergeStatic(root, filter = () => true) {
     const merged = mergeGeometries(b.geos, false);
     if (!merged) continue;
     const m = new THREE.Mesh(merged, b.material);
+    if (b.pieces.length) {
+      const starts = [];
+      let at = 0;
+      for (const g of b.geos) { starts.push(at); at += g.attributes.position.count; }
+      m.userData.pieces = b.pieces.map((p) => ({ start: starts[p.geo], count: b.geos[p.geo].attributes.position.count, kind: p.kind }));
+    }
     m.castShadow = b.cast;
     m.receiveShadow = b.receive;
     root.add(m);

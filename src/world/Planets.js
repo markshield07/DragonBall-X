@@ -343,7 +343,8 @@ export class ZuiPlanet extends Planet {
       const a = (i / 18) * Math.PI * 2;
       if (Math.abs(Math.atan2(Math.sin(a - Math.PI), Math.cos(a - Math.PI))) < 0.2) continue; // gap behind you for the portal
       const h = 3 + rand() * 4 * (i % 3 === 0 ? 0.4 : 1);
-      const p = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.85, h, 8), stone);
+      const p = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.85, h, 8).toNonIndexed(), stone);
+      p.userData.piece = 'stone';
       const x = Math.sin(a) * 31, z = -Math.cos(a) * 31;
       p.position.set(x, H(x, z) + h / 2 - 0.1, z);
       p.rotation.set((rand() - 0.5) * 0.12, rand() * 3, (rand() - 0.5) * 0.12);
@@ -357,7 +358,8 @@ export class ZuiPlanet extends Planet {
       const r = 40 + rand() * 100;
       const x = Math.sin(a) * r, z = -Math.cos(a) * r;
       const h = 4 + rand() * 14;
-      const m = new THREE.Mesh(new THREE.ConeGeometry(0.8 + h * 0.12, h, 6), i % 4 === 0 ? crystal : toon(0x6e5878, { flat: true }));
+      const m = new THREE.Mesh(new THREE.ConeGeometry(0.8 + h * 0.12, h, 6).toNonIndexed(), i % 4 === 0 ? crystal : toon(0x6e5878, { flat: true }));
+      m.userData.piece = 'spire';
       m.position.set(x, H(x, z) + h * 0.45, z);
       m.rotation.set((rand() - 0.5) * 0.4, rand() * 3, (rand() - 0.5) * 0.4);
       this.group.add(m);

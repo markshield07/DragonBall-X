@@ -436,6 +436,8 @@ export class Explosions {
       }
     }
     bus.emit('fx:shake', { position: center.clone(), amount: 0.04 + 0.12 * energy, energy });
+    // Rocks, spires and pillars nearby take the hit (see world/Destruction.js).
+    bus.emit('blast:world', { position: pos.clone(), energy, dir: dirH.lengthSq() ? _dn.clone() : null });
   }
 
   // A low dust cloud (landings, slides, dashes). No glow, no shake.

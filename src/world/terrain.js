@@ -103,8 +103,47 @@ const HEIGHTS = {
 let groundOverride = null;
 export function setGroundOverride(fn) { groundOverride = fn; }
 
+// Battle damage dug into the ground: bowls blown out of hillsides and the
+// floors of the biggest craters (world/Destruction.js adds them).
+const dents = [];
+export const MAX_DENTS = 48;
+// Returns the oldest dent if this one pushed it out (the ground there comes
+// back up, so the caller re-fits it), else null. A hit on an old dent digs
+// that dent deeper instead of stacking a new one.
+export function addDent(x, z, r, depth) {
+  for (const t of dents) {
+    if (Math.hypot(x - t.x, z - t.z) < Math.min(r, t.r) * 0.4) {
+      t.depth = Math.min(t.depth + depth * 0.6, Math.max(t.r, r) * 0.7);
+      if (r > t.r) { t.r = r; t.r2 = r * r; }
+      return null;
+    }
+  }
+  dents.push({ x, z, r, r2: r * r, depth });
+  return dents.length > MAX_DENTS ? dents.shift() : null;
+}
+function dentDepth(x, z) {
+  let d = 0;
+  for (const t of dents) {
+    const dx = x - t.x, dz = z - t.z;
+    const q = (dx * dx + dz * dz) / t.r2;
+    if (q < 1) { const k = 1 - q; d += t.depth * k * k; }
+  }
+  return d;
+}
+
+// Blast-churned earth: how dug-up the ground is here (0 to 1), for colour.
+export function scarAt(x, z) {
+  if (!dents.length || groundOverride) return 0;
+  return Math.min(1, dentDepth(x, z) * 0.9);
+}
+const SCAR = new THREE.Color(0x5e4632);
+
 export function terrainHeight(x, z) {
   if (groundOverride) return groundOverride(x, z);
+  return dents.length ? baseHeight(x, z) - dentDepth(x, z) : baseHeight(x, z);
+}
+
+function baseHeight(x, z) {
   const r = Math.hypot(x, z);
   if (r < FLAT_RADIUS) return 0;
   const hub = hubHeight(x, z, r);
@@ -215,7 +254,7 @@ export function terrainColor(x, z, y, flat, out = new THREE.Color()) {
   const n = noise2(x * 0.05, z * 0.05);
   hubColor(x, z, y, flat, n, out);
   const rm = regionMix(r);
-  if (rm <= 0) return out;
+  if (rm <= 0) return scarred(x, z, out);
   const w = regionWeights(x, z);
   _r.setRGB(0, 0, 0);
   for (let k = 0; k < REGIONS.length; k++) {
@@ -229,5 +268,10 @@ export function terrainColor(x, z, y, flat, out = new THREE.Color()) {
   out.lerp(_r, rm * (1 - keepRing));
   // Snow on the highest peaks anywhere.
   out.lerp(P.snow, smooth(150, 185, y + n * 15) * smooth(0.35, 0.6, flat));
-  return out;
+  return scarred(x, z, out);
+}
+
+function scarred(x, z, out) {
+  const s = scarAt(x, z);
+  return s > 0 ? out.lerp(SCAR, Math.min(0.85, s * 1.3)) : out;
 }

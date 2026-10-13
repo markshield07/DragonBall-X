@@ -4,6 +4,7 @@ import { clamp, formatNumber } from './math.js';
 import { Renderer } from '../render/Renderer.js';
 import { Arena } from '../world/Arena.js';
 import { World } from '../world/World.js';
+import { Destruction } from '../world/Destruction.js';
 import { Mirror } from '../world/Mirror.js';
 import { XRInput } from '../input/XRInput.js';
 import { DesktopInput } from '../input/DesktopInput.js';
@@ -73,6 +74,11 @@ export class Game {
     this.transformation = new Transformation(this);
     this.training = new Training(this);
     this.boss = new Boss(this);
+    // Breakable scenery: the valley's rocks and spires, Zui's pillars, and
+    // (as they stream in) the world's props.
+    this.destruction = new Destruction(this);
+    this.destruction.registerTree(this.arena.group, 'arena');
+    this.destruction.registerTree(this.training.zui.group, 'zui');
     this.currentBossId = 'raxor';
     this.unlockNews = [];
     this.speedFocus = new SpeedFocus(this);
@@ -790,6 +796,7 @@ export class Game {
       this.boss.update(dt * ets);
     }
     this.training.update(dt, dt * ets);
+    this.destruction.update(dt * ets);
     const fighting = this.state === 'training' || this.state === 'boss';
     const hpFrac = this.player.health / this.progress.maxHealth();
     if (fighting) this.handWounds.update(dt, hpFrac);

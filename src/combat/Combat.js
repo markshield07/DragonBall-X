@@ -4,9 +4,11 @@ import { clamp } from '../core/math.js';
 import { glowMaterial, softCircleTexture } from '../render/toon.js';
 import { terrainHeight } from '../world/Arena.js';
 import { Explosions } from '../fx/Explosions.js';
+import { sceneryRaycast } from '../world/Destruction.js';
 
 const _a = new THREE.Vector3();
 const _b = new THREE.Vector3();
+const _d = new THREE.Vector3();
 
 // Combat & collisions: target registry, punch contact tests, pooled ki
 // projectiles (player and enemy), and damage formulas.
@@ -75,6 +77,9 @@ export class Combat {
         break;
       }
     }
+    // Rocks and spires in the way stop it too (and get blown apart).
+    const rock = sceneryRaycast(o, d, len, b.radius * 0.5);
+    if (rock && rock.t < len) { len = Math.max(0.3, rock.t); ground = true; }
     // Find the first target the beam reaches.
     let hitT = null;
     for (const t of this.targets) {
@@ -213,6 +218,13 @@ export class Combat {
       if (Math.random() < 0.7) this.fx.stream(p.mesh.position, p.color, { vy: 0, spread: p.radius * 0.5, size: p.radius * 0.9, life: 0.25 });
       const pp = p.mesh.position;
       let done = p.life <= 0 || pp.y < terrainHeight(pp.x, pp.z);
+      if (!done) {
+        // Smacks into a rock, spire or pillar on the way.
+        const seg = _d.subVectors(pp, p.prev);
+        const l = seg.length();
+        const rock = l > 1e-4 ? sceneryRaycast(p.prev, seg.divideScalar(l), l, p.radius) : null;
+        if (rock) { pp.copy(p.prev).addScaledVector(_d, rock.t); done = true; }
+      }
       if (!done) done = this.collideProjectile(p);
       if (!done) this.checkPassed(p);
       if (done) {
@@ -241,7 +253,9 @@ export class Combat {
   }
 
   // A blast that flies past whoever it was aimed at (dodged, or just missed)
-  // doesn't vanish into the sky: it detonates a few metres behind them.
+  // doesn't vanish into the sky: it flies on into whatever is behind them (a
+  // hill, a rock spire, a mountain) and blows it up, or if nothing is in
+  // range, detonates a few metres behind them.
   checkPassed(p) {
     if (p.passed) return;
     for (const t of this.targets) {
@@ -254,9 +268,22 @@ export class Combat {
       if (along > 0) { p.approached = true; continue; }
       if (!p.approached) continue;
       p.passed = true;
-      p.life = Math.min(p.life, 2.6 / Math.max(1, p.speed) + 0.06);
+      const ahead = this.lookAhead(p.mesh.position, p.vel, p.radius, 140);
+      p.life = ahead !== null ? ahead / Math.max(1, p.speed) + 0.3 : Math.min(p.life, 2.6 / Math.max(1, p.speed) + 0.06);
       return;
     }
+  }
+
+  // Distance to the first ground or scenery along a direction, or null.
+  lookAhead(from, vel, rad, max) {
+    _d.copy(vel).normalize();
+    const rock = sceneryRaycast(from, _d, max, rad);
+    const lim = rock ? rock.t : max;
+    for (let t = 1; t < lim; t += 2) {
+      _b.copy(from).addScaledVector(_d, t);
+      if (_b.y < terrainHeight(_b.x, _b.z)) return t;
+    }
+    return rock ? rock.t : null;
   }
 
   collideProjectile(p) {

@@ -111,7 +111,7 @@ export class World {
     }
     // Drop chunks out of range.
     for (const [key, ch] of this.chunks) {
-      if (!want.has(key)) { this.group.remove(ch.mesh); this.chunks.delete(key); }
+      if (!want.has(key)) { this.group.remove(ch.mesh); this.game.destruction?.unregister(ch.mesh); this.chunks.delete(key); }
     }
     this.queue = [];
     for (const [key, w] of want) {
@@ -139,11 +139,31 @@ export class World {
     }
     const old = this.chunks.get(job.key);
     if (old) this.group.remove(old.mesh);
+    if (old) this.game.destruction?.unregister(old.mesh);
     const mesh = new THREE.Mesh(geo, this.mat);
     mesh.name = 'chunk';
     mesh.receiveShadow = job.lod <= PROP_RING;
+    if (geo.userData.pieces) mesh.userData.pieces = geo.userData.pieces;
     this.group.add(mesh);
+    if (mesh.userData.pieces) this.game.destruction?.register(mesh, `chunk:${job.key}`);
     this.chunks.set(job.key, { key: job.key, lod: job.lod, mesh });
+  }
+
+  // Battle damage changed the ground around (x, z): rebuild the chunks it
+  // touches (straight away, nearest first, so it shows on the next frame).
+  refreshArea(x, z, radius) {
+    for (const [key, ch] of this.chunks) {
+      const [cx, cz] = key.split(',').map(Number);
+      const nx = Math.max(cx * CS, Math.min(x, (cx + 1) * CS));
+      const nz = Math.max(cz * CS, Math.min(z, (cz + 1) * CS));
+      if (Math.hypot(nx - x, nz - z) > radius + 2) continue;
+      for (const lod of [0, 1, 2, 3]) { const g = this.cache.get(`${key}:${lod}`); if (g && g !== ch.mesh.geometry) g.dispose(); this.cache.delete(`${key}:${lod}`); }
+      this.queue = this.queue.filter((j) => j.key !== key);
+      const oldGeo = ch.mesh.geometry;
+      this.queue.unshift({ key, x: cx, z: cz, lod: ch.lod, dist: 0 });
+      this.buildNext();
+      oldGeo.dispose();
+    }
   }
 
   // Fog and horizon shift toward each region's mood; banner when you enter one.
@@ -249,7 +269,20 @@ function buildChunk(cx, cz, lod, props) {
   geo.setIndex(idx);
   if (lod <= PROP_RING) {
     const extra = scatterProps(cx, cz, props);
-    if (extra.length) geo = mergeGeometries([geo.toNonIndexed(), ...extra], false) || geo;
+    if (extra.length) {
+      const ground = geo.toNonIndexed();
+      const merged = mergeGeometries([ground, ...extra], false);
+      if (merged) {
+        // Each prop's vertex range, so blasts can break it (world/Destruction.js).
+        let at = ground.attributes.position.count;
+        merged.userData.pieces = extra.map((g) => {
+          const piece = { start: at, count: g.attributes.position.count, kind: g.userData.kind };
+          at += piece.count;
+          return piece;
+        });
+        geo = merged;
+      }
+    }
   }
   geo.computeBoundingSphere();
   return geo;
@@ -414,6 +447,7 @@ function scatterProps(cx, cz, T) {
       const s = s0 + (s1 - s0) * sc;
       _m.compose(_p.set(x, y - (rocky ? 0.6 : 0.1), z), _q.setFromEuler(_e.set(0, rot * Math.PI * 2, 0)), _s.set(s, s, s));
       g.applyMatrix4(_m);
+      g.userData.kind = name === 'mesa' || name === 'spire' ? name : rocky ? 'boulder' : 'tree';
       out.push(g);
       break;
     }

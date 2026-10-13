@@ -364,6 +364,7 @@ export class Training {
     if (remember) this.prefs.location = loc;
     const changed = loc !== this.location;
     const wasZui = this.location === 'zui';
+    if (changed) this.game.destruction?.clearDebris();
     this.location = loc;
     // Leave any planet first (it restores the outdoor world), then the
     // chamber, then arrive on the new planet (it hides the world again).
