@@ -41,6 +41,7 @@ export function defaultSettings() {
     seated: false,
     haptics: true,
     masterVolume: 0.8,
+    battleDamage: true, // blood, cuts and bruises at low health
     dominantHand: 'right',
   };
 }

@@ -21,7 +21,11 @@ export class AudioSystem {
       const comp = this.ctx.createDynamicsCompressor();
       comp.threshold.value = -14;
       comp.ratio.value = 4;
-      this.master.connect(comp).connect(this.ctx.destination);
+      // Muffle filter: closes during slow motion for an underwater feel.
+      this.muffle = this.ctx.createBiquadFilter();
+      this.muffle.type = 'lowpass';
+      this.muffle.frequency.value = 20000;
+      this.master.connect(this.muffle).connect(comp).connect(this.ctx.destination);
       this.noiseBuffer = this.makeNoise();
     }
     if (this.ctx.state === 'suspended') this.ctx.resume();
@@ -180,9 +184,56 @@ export class AudioSystem {
     const b = t + 1.05;
     this.noise(b, { duration: 2.2, freq: 3000, freqEnd: 150, gain: 0.7 });
     this.tone(b, { type: 'sine', freq: 70, freqEnd: 28, duration: 2.0, gain: 0.8 });
-    const chord = form === 'ssj1' ? [261, 329, 392, 523] : [220, 277, 330, 440];
+    // Each form has its own chord, rising and darker as forms climb.
+    const CHORDS = {
+      ssj1: [261, 329, 392, 523],
+      ssj2: [293, 369, 440, 587],
+      ssj3: [196, 247, 294, 392, 494],
+      ssj4: [174, 220, 261, 349],
+      ssj5: [233, 293, 349, 466, 587],
+    };
+    const chord = CHORDS[form] || [220, 277, 330, 440];
     chord.forEach((f) => this.tone(b, { type: 'sawtooth', freq: f, duration: 1.6, gain: 0.05, attack: 0.02 }));
     this.tone(b + 0.05, { type: 'triangle', freq: 1046, freqEnd: 2093, duration: 0.8, gain: 0.1 });
+  }
+
+  // Slow motion: a deep time-warp sweep and muffled world sound.
+  slowmo(on) {
+    if (!this.ready) return;
+    const t = this.ctx.currentTime;
+    this.muffle.frequency.setTargetAtTime(on ? 900 : 20000, t, on ? 0.08 : 0.25);
+    if (on) {
+      this.tone(t, { type: 'sine', freq: 420, freqEnd: 60, duration: 0.7, gain: 0.35 });
+      this.noise(t, { duration: 0.6, filter: 'bandpass', freq: 2400, freqEnd: 200, q: 2, gain: 0.25 });
+    } else this.tone(t, { type: 'sine', freq: 80, freqEnd: 400, duration: 0.35, gain: 0.25 });
+  }
+
+  // Beam firing: a blast plus a sustained roar (stopped with beamEnd).
+  beam(on, power = 1) {
+    if (!this.ready) return;
+    if (on) {
+      const t = this.ctx.currentTime;
+      this.noise(t, { duration: 0.6, freq: 3500, freqEnd: 300, gain: 0.5 });
+      this.tone(t, { type: 'sine', freq: 120, freqEnd: 50, duration: 0.6, gain: 0.5 });
+    }
+    this.setLoop('beam', on ? 0.9 * power : 0, 2.4, { base: 110, noiseFreq: 1400 });
+  }
+
+  beamCharge(level) {
+    this.setLoop('beamCharge', level > 0 ? 0.3 + 0.5 * level : 0, 1 + 1.5 * level, { base: 220, noiseFreq: 2000, type: 'triangle' });
+  }
+
+  kaioken() {
+    if (!this.ready) return;
+    const t = this.ctx.currentTime;
+    this.tone(t, { type: 'sawtooth', freq: 90, freqEnd: 180, duration: 0.6, gain: 0.25, attack: 0.05 });
+    this.noise(t, { duration: 0.8, freq: 900, freqEnd: 2500, gain: 0.35, attack: 0.05 });
+  }
+
+  flight(on) {
+    if (!this.ready) return;
+    const t = this.ctx.currentTime;
+    this.noise(t, { duration: 0.5, filter: 'bandpass', freq: on ? 500 : 2000, freqEnd: on ? 2500 : 400, q: 1.2, gain: 0.25 });
   }
 
   powerDown() {

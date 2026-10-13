@@ -40,6 +40,8 @@ export class DesktopInput {
     this.handRot = { left: new THREE.Quaternion(), right: new THREE.Quaternion() };
     this.sensitivity = 0.0022;
     this.enabled = false;
+    // On-screen buttons (Fly / Slow-Mo) press these for one frame.
+    this.virtual = { fly: false, slowmo: false };
 
     window.addEventListener('keydown', (e) => {
       if (!this.enabled) return;
@@ -155,14 +157,22 @@ export class DesktopInput {
       if (this.pressed('KeyQ')) L.grip = 1;
       R.primaryDown = this.down('KeyT');
       R.secondaryDown = this.down('KeyE');
+      // F = slow motion (right stick click), G = fly (left stick click)
+      R.stickPressDown = this.down('KeyF') || this.virtual.slowmo;
+      L.stickPressDown = this.down('KeyG') || this.virtual.fly;
+    } else {
+      R.stickPressDown = L.stickPressDown = false;
     }
+    this.virtual.fly = this.virtual.slowmo = false;
     L.primaryDown = this.down('Tab') || this.down('KeyM'); // X = menu
     L.secondaryDown = this.down('KeyC'); // Y = comfort
     // Movement
     const mx = (this.pressed('KeyD') ? 1 : 0) - (this.pressed('KeyA') ? 1 : 0);
     const my = (this.pressed('KeyS') ? 1 : 0) - (this.pressed('KeyW') ? 1 : 0);
     L.stick.set(gameplay ? mx : 0, gameplay ? my : 0);
-    R.stick.set(0, 0);
+    // Flying: R rises, V descends (right stick up / down in VR).
+    const rise = (this.pressed('KeyR') ? 1 : 0) - (this.pressed('KeyV') ? 1 : 0);
+    R.stick.set(0, gameplay ? -rise : 0);
     s.escape = this.down('Escape');
 
     this.keysDown.clear();

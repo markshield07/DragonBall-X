@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { bus } from '../core/events.js';
 import { clamp } from '../core/math.js';
+import { glowMaterial, softCircleTexture } from '../render/toon.js';
 
 const _a = new THREE.Vector3();
 const _b = new THREE.Vector3();
@@ -18,6 +19,86 @@ export class Combat {
     this.coreGeo = new THREE.SphereGeometry(1, 14, 10);
     this.contact = new Map(); // hand -> current swing state
     this.combo = { count: 0, timer: 0, lastHand: null };
+    this.playerBeam = null;
+    this.buildBeam();
+  }
+
+  // ---- Beams ------------------------------------------------------------------
+  buildBeam() {
+    const geo = new THREE.CylinderGeometry(1, 1, 1, 14, 1, true).rotateX(Math.PI / 2).translate(0, 0, 0.5);
+    this.beamGroup = new THREE.Group();
+    this.beamOuter = new THREE.Mesh(geo, glowMaterial(0x4fc3ff, 0.6));
+    this.beamMid = new THREE.Mesh(geo, glowMaterial(0x4fc3ff, 0.5));
+    this.beamCore = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0xffffff }));
+    for (const m of [this.beamOuter, this.beamMid, this.beamCore]) { m.frustumCulled = false; m.renderOrder = 7; this.beamGroup.add(m); }
+    this.beamTip = new THREE.Sprite(new THREE.SpriteMaterial({ map: softCircleTexture(), color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+    this.beamTip.renderOrder = 8;
+    this.beamGroup.visible = false;
+    this.beamTip.visible = false;
+    this.scene.add(this.beamGroup, this.beamTip);
+  }
+
+  // A continuous beam that follows origin()/dir() callbacks, hits the first
+  // enemy target along it and deals `dps` in short ticks.
+  fireBeam({ origin, dir, duration, dps, radius, color, team = 'player' }) {
+    this.playerBeam = { origin, dir, duration, t: 0, dps, radius, color, team, tick: 0, o: new THREE.Vector3(), d: new THREE.Vector3() };
+    this.beamOuter.material.color.setHex(color);
+    this.beamMid.material.color.setHex(color);
+    this.beamTip.material.color.setHex(color);
+    bus.emit('beam:start', { color });
+  }
+
+  updateBeam(dt) {
+    const b = this.playerBeam;
+    if (!b) return;
+    b.t += dt;
+    const o = b.origin(b.o);
+    const d = b.dir(b.d);
+    // Find the first target the beam reaches.
+    let len = 45;
+    let hitT = null;
+    for (const t of this.targets) {
+      if (t.team !== 'enemy' || (t.active && !t.active())) continue;
+      const s = t.sphere();
+      const along = _a.subVectors(s.center, o).dot(d);
+      if (along < 0 || along > len) continue;
+      const perp2 = _a.lengthSq() - along * along;
+      const rr = s.radius + b.radius;
+      if (perp2 > rr * rr) continue;
+      const hitAt = along - Math.sqrt(Math.max(0, rr * rr - perp2)) + b.radius;
+      if (hitAt < len) { len = Math.max(0.3, hitAt); hitT = t; }
+    }
+    // Grow in quickly, fade out at the end.
+    const k = Math.min(1, b.t / 0.12) * Math.min(1, (b.duration - b.t) / 0.25 + 0.2);
+    const reach = Math.min(len, b.t * 60);
+    const r = b.radius * k * (1 + Math.sin(b.t * 50) * 0.06);
+    this.beamGroup.visible = true;
+    this.beamGroup.position.copy(o);
+    this.beamGroup.lookAt(_b.copy(o).add(d));
+    this.beamOuter.scale.set(r, r, reach);
+    this.beamMid.scale.set(r * 0.7, r * 0.7, reach);
+    this.beamCore.scale.set(r * 0.38, r * 0.38, reach);
+    this.beamTip.visible = true;
+    this.beamTip.position.copy(o).addScaledVector(d, reach);
+    this.beamTip.scale.setScalar(r * (hitT && reach >= len ? 7 : 3));
+    if (Math.random() < 0.8) this.fx.stream(o, b.color, { vy: 0, spread: r * 0.8, size: r * 0.6, life: 0.2 });
+    b.tick -= dt;
+    if (hitT && reach >= len && b.tick <= 0) {
+      b.tick = 0.1;
+      const point = _a.copy(o).addScaledVector(d, len).clone();
+      const hit = { damage: b.dps * 0.1, dir: d.clone(), point, charged: false, kind: 'beam', power: 0.6 };
+      hitT.onBlast?.(hit);
+      bus.emit('beam:hit', { ...hit, target: hitT });
+      this.fx.burst(point, b.color, 6, 3, 0.07, 0.35);
+    }
+    if (b.t >= b.duration) this.stopBeam();
+  }
+
+  stopBeam() {
+    this.playerBeam = null;
+    this.beamGroup.visible = false;
+    this.beamTip.visible = false;
+    bus.emit('beam:end', {});
   }
 
   addTarget(t) { this.targets.add(t); return () => this.targets.delete(t); }
@@ -69,10 +150,13 @@ export class Combat {
     sw.prev.copy(pos);
   }
 
-  update(dt) {
-    if (this.combo.timer > 0) this.combo.timer -= dt;
+  // enemyScale < 1 slows enemy projectiles (slow motion); yours stay full speed.
+  update(dt0, enemyScale = 1) {
+    if (this.combo.timer > 0) this.combo.timer -= dt0;
+    this.updateBeam(dt0);
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const p = this.projectiles[i];
+      const dt = p.team === 'enemy' ? dt0 * enemyScale : dt0;
       p.life -= dt;
       p.prev.copy(p.mesh.position);
       if (p.homing && p.homing.target) {
@@ -135,6 +219,12 @@ export class Combat {
   }
 
   explode(p) {
+    if (p.kind === 'sphere') {
+      this.fx.burst(p.mesh.position, p.color, 60, 6, 0.16, 0.9);
+      this.fx.ring(p.mesh.position.clone(), p.color, { maxRadius: 6 * p.radius + 2, duration: 0.7 });
+      this.fx.flash(p.mesh.position, 0xffffff, p.radius * 6, 0.25);
+      if (p.mesh.position.y < 1.5) this.fx.crack(p.mesh.position.clone(), 2 + p.radius * 2);
+    }
     const s = p.charged ? 1 : 0.4;
     this.fx.burst(p.mesh.position, p.color, p.charged ? 26 : 10, 3 * s + 1, 0.1 * s + 0.05, 0.5);
     this.fx.flash(p.mesh.position, p.color, p.radius * 4, 0.18);
@@ -149,6 +239,7 @@ export class Combat {
   }
 
   clearProjectiles(team = null) {
+    if (!team || team === 'player') { if (this.playerBeam) this.stopBeam(); }
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       if (!team || this.projectiles[i].team === team) this.removeProjectile(i);
     }

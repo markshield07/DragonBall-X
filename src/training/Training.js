@@ -4,7 +4,13 @@ import { clamp, rand } from '../core/math.js';
 import { toon, glowMaterial, addOutline } from '../render/toon.js';
 import { Dummy } from './Dummy.js';
 import { Panel, COLORS } from '../ui/Panel.js';
+import { FORMS } from '../progression/forms.js';
 import { segmentSphere } from '../combat/Combat.js';
+import { Sparring, SPAR_LEVELS } from './Sparring.js';
+import { TimeChamber } from '../world/TimeChamber.js';
+import {
+  GRAVITY_LEVELS, TIME_CHAMBER_HOURS_PER_SECOND, TIME_CHAMBER_XP, TIME_CHAMBER_MILESTONES, STAT_KEYS,
+} from '../progression/Progression.js';
 
 export const ACTIVITIES = [
   { id: 'punch', name: 'Punching Training', stat: 'strength', desc: 'Punch the dummy. Harder punches and combos give more Strength XP. Break it for a bonus!' },
@@ -12,7 +18,9 @@ export const ACTIVITIES = [
   { id: 'speed', name: 'Speed Training', stat: 'speed', desc: 'Punch or touch each orb as it appears. Faster reactions give more Speed XP.' },
   { id: 'defense', name: 'Defensive Training', stat: 'stamina', desc: 'The bot fires energy orbs. Block (left grip / Q) or dodge them for Stamina XP.' },
   { id: 'transform', name: 'Transformation Training', stat: 'mastery', desc: 'Power up, transform and hold the form. Builds mastery: faster power-ups, less ki drain.', requires: 'ssj1' },
+  { id: 'spar', name: 'Sparring Partner', stat: 'all', desc: 'Fight a partner who punches, blocks, dodges and fires ki. Every stat grows. Knock them down for a bonus!' },
 ];
+export { SPAR_LEVELS };
 
 const _v = new THREE.Vector3();
 
@@ -277,14 +285,18 @@ export class Training {
   constructor(game) {
     this.game = game;
     this.activity = 'punch';
-    this.gravity = 1; // Gravity chamber arrives in Phase 2; the multiplier is already wired in.
     this.sessionXp = 0;
+    this.sparring = new Sparring(game);
+    this.chamber = new TimeChamber(game.renderer.scene);
+    this.location = 'arena';
+    this.strainTimer = 0;
+    this.streakTimer = 0;
     this.dummy = new Dummy(game, new THREE.Vector3(0, 0, -1.15));
     this.kiTargets = new KiTargets(game);
     this.speed = new SpeedOrbs(game);
     this.bot = new DefenseBot(game);
     this.transformGoal = { time: 0, transforms: 0 };
-    this.sign = new Panel({ width: 1.1, height: 0.62, interactive: false, name: 'trainingSign' });
+    this.sign = new Panel({ width: 1.1, height: 0.7, interactive: false, name: 'trainingSign' });
     this.sign.mesh.position.set(1.9, 1.75, -1.6);
     this.sign.mesh.rotation.y = -0.45;
     game.renderer.scene.add(this.sign.mesh);
@@ -295,26 +307,79 @@ export class Training {
     bus.on('transform:burst', () => { if (this.activity === 'transform') this.transformGoal.transforms += 1; });
   }
 
-  get xpMult() { return this.gravity === 1 ? 1 : 1 + Math.log10(this.gravity) * 1.5; }
+  get prefs() { return this.game.progress.data.trainingPrefs; }
+  // Gravity multiplier from the training settings (1 = normal).
+  get gravity() { return this.prefs.gravity || 1; }
+  // Gravity felt right now: only while training.
+  get activeGravity() { return this.enabled && this.game.state === 'training' ? this.gravity : 1; }
+  get inChamber() { return this.location === 'timechamber'; }
+  get xpMult() {
+    const g = this.activeGravity;
+    return (g === 1 ? 1 : 1 + Math.log10(g) * 1.5) * (this.inChamber ? TIME_CHAMBER_XP : 1);
+  }
 
   setEnabled(v) {
     this.enabled = v;
-    if (v) { this.sign.show(); this.setActivity(this.activity, false); } else {
+    if (v) { this.sign.show(); this.setLocation(this.prefs.location, false); this.setActivity(this.activity, false); } else {
       this.sign.hide();
       this.dummy.setVisible(false);
       this.kiTargets.setActive(false);
       this.speed.setActive(false);
       this.bot.setActive(false);
+      this.sparring.setActive(false);
+      this.setLocation('arena', false, false);
     }
   }
 
+  // Gravity setting (only unlocked levels).
+  setGravity(g) {
+    if (!this.game.progress.data.gravityUnlocked.includes(g)) return;
+    this.prefs.gravity = g;
+    const lv = GRAVITY_LEVELS.find((l) => l.g === g);
+    bus.emit('hud:message', { text: g === 1 ? 'Gravity back to normal' : `Gravity set to ${g}x (${lv.name}): +${Math.round((Math.log10(g) * 1.5) * 100)}% XP`, color: g === 1 ? '#aab3d6' : '#ff6a6a' });
+    this.sign.dirty = true;
+  }
+
+  setDifficulty(id) {
+    this.prefs.difficulty = id;
+    if (this.activity === 'spar' && this.enabled) this.sparring.setLevel(id, this.inChamber);
+    else this.sparring.level = SPAR_LEVELS.find((l) => l.id === id) || SPAR_LEVELS[1];
+    this.sparring.avatarStale = true;
+    this.sign.dirty = true;
+  }
+
+  // 'arena' (training grounds) or 'timechamber'. remember = store as preference.
+  setLocation(loc, announce = true, remember = true) {
+    if (loc === 'timechamber' && !this.game.progress.data.timeChamber.unlocked) loc = 'arena';
+    if (remember) this.prefs.location = loc;
+    const changed = loc !== this.location;
+    this.location = loc;
+    this.chamber.setActive(loc === 'timechamber', this.game.arena);
+    if (changed && this.activity === 'spar' && this.sparring.group.visible) this.sparring.setLevel(this.prefs.difficulty, this.inChamber);
+    if (announce && changed) {
+      bus.emit('hud:message', loc === 'timechamber'
+        ? { text: 'Hyperbolic Time Chamber: 3x XP. A day passes every 24 seconds.', color: '#ffffff', duration: 3.5 }
+        : { text: 'Back on the training grounds', color: '#aab3d6' });
+    }
+    this.sign.dirty = true;
+  }
+
   setActivity(id, announce = true) {
+    if (!ACTIVITIES.some((a) => a.id === id)) id = 'punch';
     this.activity = id;
     this.sessionXp = 0;
     this.dummy.setVisible(id === 'punch' || id === 'transform');
     this.kiTargets.setActive(id === 'ki');
     this.speed.setActive(id === 'speed');
     this.bot.setActive(id === 'defense');
+    if (id === 'spar') {
+      const sp = this.sparring;
+      if (!sp.avatar || sp.avatarStale || sp.shadow !== this.inChamber || sp.level.id !== this.prefs.difficulty) {
+        sp.avatarStale = false;
+        sp.setLevel(this.prefs.difficulty, this.inChamber);
+      }
+    }
+    this.sparring.setActive(id === 'spar');
     if (id === 'transform') this.transformGoal = { time: 0, transforms: 0 };
     this.sign.dirty = true;
     if (announce) {
@@ -323,12 +388,21 @@ export class Training {
     }
   }
 
-  update(dt) {
+  // dt: real time. enemyDt: slowed by slow motion (enemies only).
+  update(dt, enemyDt = dt) {
+    this.chamber.update(dt);
+    const g = this.game;
+    g.arena.gravity = this.enabled && g.state === 'training' && this.gravity > 1 ? Math.min(1, 0.4 + Math.log10(this.gravity) * 0.3) : 0;
     if (!this.enabled) return;
     this.dummy.update(dt);
     this.kiTargets.update(dt);
     this.speed.update(dt);
-    this.bot.update(dt);
+    this.bot.update(enemyDt);
+    this.sparring.update(enemyDt);
+    if (g.state === 'training' && !g.menuOpen) {
+      this.updateGravity(dt);
+      this.updateChamber(dt);
+    }
     if (this.activity === 'transform' && this.game.player.form !== 'base') {
       this.transformGoal.time += dt;
       this.signTimer -= dt;
@@ -341,6 +415,58 @@ export class Training {
     this.sign.update();
   }
 
+  // Heavy gravity: falling pressure streaks, and if you are below the
+  // recommended Power Level it strains you (stamina, then some health).
+  updateGravity(dt) {
+    const g = this.game;
+    const grav = this.gravity;
+    if (grav <= 1) return;
+    const p = g.player;
+    this.streakTimer -= dt;
+    if (this.streakTimer <= 0) {
+      this.streakTimer = 0.05;
+      const head = p.headWorld;
+      const a = rand(0, Math.PI * 2);
+      const r = rand(0.6, 3);
+      g.effects.stream(new THREE.Vector3(head.x + Math.cos(a) * r, head.y + rand(0.5, 2), head.z + Math.sin(a) * r), 0xff5a4a, { vy: -5 - grav * 0.05, spread: 0.01, size: 0.025, life: 0.35 });
+    }
+    const lv = GRAVITY_LEVELS.find((l) => l.g === grav);
+    const pl = g.progress.basePowerLevel();
+    if (lv?.recommended && pl < lv.recommended) {
+      const strain = clamp(1 - pl / lv.recommended, 0.15, 1);
+      p.stamina = Math.max(0, p.stamina - 3 * strain * dt);
+      if (p.exhausted) p.health = Math.max(g.progress.maxHealth() * 0.15, p.health - 4 * strain * dt);
+      this.strainTimer -= dt;
+      if (this.strainTimer <= 0) {
+        this.strainTimer = 12;
+        bus.emit('hud:message', { text: `${grav}x gravity is crushing you! Recommended Power Level ${lv.recommended.toLocaleString('en-US')}`, color: '#ff6a6a', duration: 3 });
+      }
+    }
+  }
+
+  // Simulated days inside the Time Chamber, with milestone rewards.
+  updateChamber(dt) {
+    if (!this.inChamber) return;
+    const g = this.game;
+    const tc = g.progress.data.timeChamber;
+    const before = Math.floor(tc.seconds * TIME_CHAMBER_HOURS_PER_SECOND / 24);
+    tc.seconds += dt;
+    const days = Math.floor(tc.seconds * TIME_CHAMBER_HOURS_PER_SECOND / 24);
+    if (days !== before) this.sign.dirty = true;
+    for (const m of TIME_CHAMBER_MILESTONES) {
+      if (days >= m && !tc.milestones.includes(m)) {
+        tc.milestones.push(m);
+        const xp = 15 + m * 0.6;
+        for (const k of STAT_KEYS) g.progress.addXp(k, xp, 'time-chamber');
+        bus.emit('timechamber:milestone', { days: m, xp });
+      }
+    }
+  }
+
+  chamberDays() {
+    return Math.floor(this.game.progress.data.timeChamber.seconds * TIME_CHAMBER_HOURS_PER_SECOND / 24);
+  }
+
   drawSign(ui) {
     const a = ACTIVITIES.find((x) => x.id === this.activity);
     const p = this.game.progress;
@@ -348,15 +474,21 @@ export class Training {
     ui.text(a.name.toUpperCase(), 40, 80, { size: 50, color: COLORS.gold });
     let y = ui.wrap(a.desc, 40, 135, ui.W - 80, { size: 30, color: COLORS.text });
     y += 10;
-    if (a.stat !== 'mastery') {
+    if (a.stat === 'all') {
+      const sp = this.sparring;
+      ui.text(`${sp.shadow ? 'Your Shadow' : 'Partner'} · ${sp.level.name}`, 40, y + 20, { size: 34, color: COLORS.blue });
+      ui.bar(420, y - 8, ui.W - 460, 38, sp.health / (sp.maxHealth || 1), '#ff6a4d', { label: `Round ${sp.wins + 1}` });
+      y += 80;
+    } else if (a.stat !== 'mastery') {
       const st = p.data.stats[a.stat];
       const need = 40 + 15 * st.level;
       ui.text(`${a.stat.toUpperCase()} Lv ${st.level}`, 40, y + 20, { size: 34, color: COLORS.blue });
       ui.bar(300, y - 8, ui.W - 340, 38, st.xp / need, '#4cc3ff', { label: `${Math.floor(st.xp)} / ${need} XP` });
       y += 80;
     } else {
-      const m = p.mastery('ssj1');
-      ui.text(`Super Saiyan mastery Lv ${m.level}`, 40, y + 20, { size: 34, color: COLORS.gold });
+      const form = this.game.player.form !== 'base' ? this.game.player.form : p.topForm();
+      const m = p.mastery(form);
+      ui.text(`${FORMS[form].name} mastery Lv ${m.level}`, 40, y + 20, { size: 34, color: COLORS.gold });
       y += 70;
       ui.text(`Transforms this session: ${this.transformGoal.transforms}`, 40, y, { size: 30 });
       ui.text(`Time in form: ${Math.floor(this.transformGoal.time)}s`, 40, y + 40, { size: 30 });
@@ -364,5 +496,10 @@ export class Training {
     }
     if (this.activity === 'speed') ui.text(`Streak ${this.speed.streak}   Best ${this.speed.best}`, 40, y, { size: 32, color: COLORS.green });
     else ui.text(`Session: +${Math.round(this.sessionXp)} XP`, 40, y, { size: 32, color: COLORS.green });
+    const extras = [];
+    if (this.gravity > 1) extras.push(`Gravity ${this.gravity}x`);
+    if (this.inChamber) extras.push(`Time Chamber · Day ${this.chamberDays()}`);
+    if (this.xpMult > 1.01) extras.push(`XP x${this.xpMult.toFixed(1)}`);
+    if (extras.length) ui.text(extras.join('  ·  '), 40, y + 44, { size: 28, color: this.gravity > 1 ? COLORS.red : COLORS.gold });
   }
 }

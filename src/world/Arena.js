@@ -69,6 +69,8 @@ export class Arena {
     this.group.add(this.highGroup);
     this.time = 0;
     this.tint = 0; // 0..1, darkens the sky during transformations
+    this.slow = 0; // 0..1, cool blue tint during slow motion
+    this.gravity = 0; // 0..1, red gravity-chamber tint
     this.rand = mulberry32(1987);
 
     this.buildSky();
@@ -679,8 +681,14 @@ export class Arena {
     this.dustUniforms.uTime.value = this.time;
     this.floating.position.y = Math.sin(this.time * 0.6) * 0.35;
     this.floating.rotation.y = Math.sin(this.time * 0.15) * 0.08;
-    this.skyUniforms.tint.value = this.tint;
-    const k = 1 - this.tint * 0.35;
+    // Strongest effect wins: transformation dims gold, slow motion tints
+    // blue, the gravity chamber glows red.
+    const slow = this.slow * 0.8;
+    const grav = this.gravity * (0.42 + 0.05 * Math.sin(this.time * 3));
+    const t = Math.max(this.tint, slow, grav);
+    this.skyUniforms.tint.value = t;
+    this.skyUniforms.tintColor.value.setHex(t === this.tint ? 0x3a2a10 : t === slow ? 0x1a3a8a : 0x8a1010);
+    const k = 1 - t * 0.35;
     this.hemi.intensity = 0.95 * k;
     this.sun.intensity = 1.45 * k;
   }

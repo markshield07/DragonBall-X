@@ -3,7 +3,7 @@ import { bus } from '../core/events.js';
 import { FORMS } from '../progression/forms.js';
 import { formatNumber } from '../core/math.js';
 import { roundRect, COLORS } from './Panel.js';
-import { BOSSES } from '../boss/Raxor.js';
+import { BOSSES } from '../boss/bosses.js';
 
 // Status HUD drawn on one canvas. On desktop the canvas itself is shown as a
 // DOM overlay; in VR the same canvas is a texture on a wrist display above
@@ -104,6 +104,14 @@ export class HUD {
     text(f.name.toUpperCase(), W - 28, 52, 34, p.form === 'base' ? COLORS.muted : COLORS.gold, 'right');
     // Power level
     text('POWER LEVEL', 28, 100, 24, COLORS.muted);
+    // Status badges: flying, slow motion, Kaio-ken, gravity, Time Chamber
+    const badges = [];
+    if (p.flying) badges.push(['FLYING', '#bfe6ff']);
+    if (game.speedFocus.active > 0) badges.push([`SLOW-MO ${Math.ceil(game.speedFocus.active)}s`, '#7fd8ff']);
+    if (p.kaioken > 0) badges.push([`KAIO-KEN ${Math.ceil(p.kaioken)}s`, '#ff5a4a']);
+    if (game.state === 'training' && game.training.gravity > 1) badges.push([`${game.training.gravity}x G`, '#ff6a6a']);
+    if (game.state === 'training' && game.training.inChamber) badges.push([`DAY ${game.training.chamberDays()}`, '#ffffff']);
+    badges.slice(0, 3).forEach(([s, c], i) => text(s, W - 28, 100 + i * 30, 24, c, 'right'));
     text(formatNumber(this.displayPL), 28, 150, 54, p.form === 'base' ? '#ffffff' : COLORS.gold);
     // Resources
     bar(28, 172, 712, 34, p.health / prog.maxHealth(), '#4cdd6a', `HP ${Math.ceil(p.health)}`);
@@ -125,7 +133,11 @@ export class HUD {
     if (game.boss.active && game.boss.state !== 'inactive') {
       const b = game.boss;
       text(`${b.def.name.toUpperCase()}  PL ${formatNumber(b.def.powerLevel)}`, 28, 370, 28, '#ff8a8a');
-      bar(28, 384, 712, 30, b.health / b.def.maxHealth, b.phase === 2 ? '#c02aff' : '#ff4a4a');
+      const ph = b.phase > 0 ? b.def.phases[b.phase - 1] : null;
+      bar(28, 384, 712, 30, b.health / b.def.maxHealth, ph ? '#' + ph.aura.color.toString(16).padStart(6, '0') : '#ff4a4a');
+      // Phase markers
+      g.fillStyle = 'rgba(255,255,255,0.7)';
+      for (const p2 of b.def.phases) g.fillRect(28 + 712 * p2.at - 2, 380, 4, 38);
     } else {
       const goal = prog.nextGoal(BOSSES);
       text(`NEXT: ${goal.title}`, 28, 370, 28, COLORS.gold);
@@ -137,7 +149,7 @@ export class HUD {
     if (this.message) {
       text(this.message.text, W / 2, 492, 30, this.message.color, 'center');
     } else if (!game.isXR) {
-      text('Tab: menu   Space: power up   T: transform', W / 2, 492, 22, 'rgba(255,255,255,0.45)', 'center', 'normal');
+      text('Tab: menu  Space: power up  T: transform  G: fly  F: slow-mo', W / 2, 492, 22, 'rgba(255,255,255,0.45)', 'center', 'normal');
     }
     this.texture.needsUpdate = true;
   }

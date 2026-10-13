@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { toon } from '../render/toon.js';
 import { Avatar } from '../character/Avatar.js';
 import { Aura } from '../fx/Aura.js';
+import { BattleDamage } from '../fx/BattleDamage.js';
 
 const _v = new THREE.Vector3();
 const _q = new THREE.Quaternion();
@@ -98,6 +99,8 @@ export class Mirror {
     this.avatar = new Avatar(character);
     this.reflect.add(this.avatar.root);
     this.avatar.setForm(this.game.player?.form || 'base');
+    // Your own battle damage shows in the mirror.
+    this.wounds = new BattleDamage(this.avatar.root, this.game, { scale: 0.8 });
   }
 
   setForm(id) {
@@ -116,10 +119,11 @@ export class Mirror {
     _e.setFromQuaternion(g.renderer.camera.getWorldQuaternion(_q), 'YXZ');
     const yaw = _e.y;
     const root = this.avatar.root;
-    const eye = Math.max(0.9, head.y);
+    const eye = Math.max(0.9, head.y - g.player.groundY());
     const scale = THREE.MathUtils.clamp(eye / 1.66, 0.8, 1.15);
     root.scale.setScalar(scale);
-    root.position.set(head.x, 0, head.z).sub(_v.set(Math.sin(yaw), 0, Math.cos(yaw)).multiplyScalar(-0.06));
+    const floor = g.player.groundY();
+    root.position.set(head.x, floor, head.z).sub(_v.set(Math.sin(yaw), 0, Math.cos(yaw)).multiplyScalar(-0.06));
     root.rotation.set(0, yaw + Math.PI, 0); // avatar faces +Z, camera looks down -Z
     root.updateMatrixWorld();
     // Hands to avatar-local space
@@ -142,7 +146,8 @@ export class Mirror {
     this.aura.color.copy(pa.color);
     this.aura.core.copy(pa.core);
     this.aura.scale = pa.scale;
-    this.aura.group.position.set(root.position.x, 0, root.position.z);
+    this.aura.group.position.set(root.position.x, floor, root.position.z);
+    this.wounds.update(dt, g.player.health / g.progress.maxHealth());
     this.aura.update(dt, g.renderer.camera, g.visualIntensity * 0.9);
   }
 }

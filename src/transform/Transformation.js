@@ -120,7 +120,7 @@ export class Transformation {
     } else if (can.reason === 'ki') {
       bus.emit('hud:message', { text: 'Not enough ki to transform', color: '#ff9a4d' });
     } else if (can.reason === 'max') {
-      bus.emit('hud:message', { text: 'Higher forms arrive in Phase 2!', color: '#ffd24d' });
+      bus.emit('hud:message', { text: 'This is your highest form. Press A (T) to power down.', color: '#ffd24d' });
     }
   }
 
@@ -141,7 +141,8 @@ export class Transformation {
     const f = FORMS[this.targetForm];
     const intensity = g.visualIntensity;
     const head = this.player.headWorld;
-    const feet = new THREE.Vector3(head.x, 0.05, head.z);
+    const ground = this.player.groundY();
+    const feet = new THREE.Vector3(head.x, ground + 0.05, head.z);
     if (t < BURST_AT) {
       // Build-up: aura flares, sky darkens, energy spirals and debris lifts.
       const k = t / BURST_AT;
@@ -151,9 +152,9 @@ export class Transformation {
       for (let i = 0; i < 3; i++) {
         const a = rand(0, Math.PI * 2);
         const r = rand(0.6, 1.4);
-        g.effects.stream(new THREE.Vector3(feet.x + Math.cos(a) * r, rand(0, 0.4), feet.z + Math.sin(a) * r), i ? f.aura.color : 0xffffff, { vy: 2 + k * 4, spread: 0.05, size: 0.05 + 0.05 * k, life: 0.6 });
+        g.effects.stream(new THREE.Vector3(feet.x + Math.cos(a) * r, ground + rand(0, 0.4), feet.z + Math.sin(a) * r), i ? f.aura.color : 0xffffff, { vy: 2 + k * 4, spread: 0.05, size: 0.05 + 0.05 * k, life: 0.6 });
       }
-      if (Math.random() < 0.3) g.effects.burst(new THREE.Vector3(feet.x + rand(-2, 2), 0.1, feet.z + rand(-2, 2)), 0x8a6a4c, 2, 1.5, 0.09, 1.2, { up: 2.5, drag: 0.3 });
+      if (Math.random() < 0.3) g.effects.burst(new THREE.Vector3(feet.x + rand(-2, 2), ground + 0.1, feet.z + rand(-2, 2)), 0x8a6a4c, 2, 1.5, 0.09, 1.2, { up: 2.5, drag: 0.3 });
       g.haptic('left', 0.2 + 0.6 * k, 30);
       g.haptic('right', 0.2 + 0.6 * k, 30);
     } else if (!this.burstDone) {
@@ -162,10 +163,10 @@ export class Transformation {
       // Burst: stylized shockwave through the environment (not a screen flash).
       g.effects.ring(feet, f.aura.color, { maxRadius: 22, duration: 1.4, opacity: 0.9 });
       g.effects.ring(feet, 0xffffff, { maxRadius: 12, duration: 0.9, opacity: 0.7 });
-      g.effects.ring(new THREE.Vector3(feet.x, 1.0, feet.z), f.aura.color, { maxRadius: 6, duration: 0.7, opacity: 0.6 });
-      g.effects.burst(new THREE.Vector3(feet.x, 1.0, feet.z), f.aura.color, 80, 7, 0.12, 1.1, { drag: 1.2 });
-      g.effects.burst(new THREE.Vector3(feet.x, 0.2, feet.z), 0xffffff, 30, 5, 0.08, 0.8, { up: 3 });
-      g.effects.crack(feet, 3.2);
+      g.effects.ring(new THREE.Vector3(feet.x, ground + 1.0, feet.z), f.aura.color, { maxRadius: 6, duration: 0.7, opacity: 0.6 });
+      g.effects.burst(new THREE.Vector3(feet.x, ground + 1.0, feet.z), f.aura.color, 80, 7, 0.12, 1.1, { drag: 1.2 });
+      g.effects.burst(new THREE.Vector3(feet.x, ground + 0.2, feet.z), 0xffffff, 30, 5, 0.08, 0.8, { up: 3 });
+      if (!this.player.flying) g.effects.crack(feet, 3.2);
       g.haptic('left', 1, 400);
       g.haptic('right', 1, 400);
       g.playerAura.intensity = 1.6;
@@ -222,7 +223,11 @@ export class Transformation {
 
     // Aura target
     if (this.state !== 'transforming') {
-      if (this.state === 'poweringDown') aura.target = 0;
+      if (p.kaioken > 0) {
+        // Kaio-ken: a blazing red aura over any form.
+        aura.setStyle({ color: 0xff2a1a, core: 0xffb0a0, scale: Math.max(1, f.aura.scale) * (1 + 0.3 * c) });
+        aura.target = 0.9 + 0.3 * c;
+      } else if (this.state === 'poweringDown') aura.target = 0;
       else if (transformed) {
         aura.setStyle({ color: f.aura.color, core: f.aura.core, scale: f.aura.scale * (1 + 0.3 * c) });
         aura.target = 0.75 + 0.5 * c;
@@ -253,12 +258,25 @@ export class Transformation {
     // Lightning arcs between the hands (stage 2) and around the body when transformed
     this.lightningTimer -= dt;
     const maxBolts = g.preset.lightning;
-    const wantBolts = this.state === 'transforming' ? maxBolts : charging && c > 0.55 ? Math.ceil(maxBolts * (c - 0.5) * 2) : 0;
+    let wantBolts = this.state === 'transforming' ? maxBolts : charging && c > 0.55 ? Math.ceil(maxBolts * (c - 0.5) * 2) : 0;
+    // Super Saiyan 2 and above crackle with lightning around the body.
+    const bodyBolts = wantBolts === 0 && transformed && f.aura.lightning && this.state !== 'poweringDown';
+    if (bodyBolts) wantBolts = Math.min(maxBolts, 2);
     if (this.lightningTimer <= 0) {
       this.lightningTimer = 0.06;
       const L = g.hands.hands.left;
       const R = g.hands.hands.right;
       this.lightning.forEach((l, i) => {
+        if (bodyBolts) {
+          if (i >= wantBolts || Math.random() < 0.55) { l.mesh.visible = false; return; }
+          l.mat.color.setHex(p.form === 'ssj5' ? 0xbfe8ff : 0xfff2a8);
+          l.mat.opacity = 0.8 * g.visualIntensity;
+          const head = p.headWorld;
+          const a = rand(0, Math.PI * 2);
+          const from = new THREE.Vector3(head.x + Math.cos(a) * rand(0.3, 0.55), head.y - rand(0.1, 1.2), head.z + Math.sin(a) * rand(0.3, 0.55));
+          l.set(from, from.clone().add(new THREE.Vector3(rand(-0.3, 0.3), rand(-0.5, 0.3), rand(-0.3, 0.3))), 0.006, 0.06);
+          return;
+        }
         if (i >= wantBolts || !L.group.visible || !R.group.visible || Math.random() < 0.25) { l.mesh.visible = false; return; }
         l.mat.color.setHex(transformed ? 0xfff2a8 : 0xd8f2ff);
         l.mat.opacity = 0.9 * g.visualIntensity;

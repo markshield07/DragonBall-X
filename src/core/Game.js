@@ -13,10 +13,14 @@ import { Combat } from '../combat/Combat.js';
 import { Effects } from '../fx/Effects.js';
 import { Aura } from '../fx/Aura.js';
 import { Progression, STAT_LABELS } from '../progression/Progression.js';
-import { FORMS } from '../progression/forms.js';
+import { FORMS, FORM_ORDER } from '../progression/forms.js';
 import { Transformation } from '../transform/Transformation.js';
 import { Training } from '../training/Training.js';
-import { Raxor } from '../boss/Raxor.js';
+import { Boss } from '../boss/Boss.js';
+import { BOSSES, bossById } from '../boss/bosses.js';
+import { SpeedFocus, SLOWMO_UNLOCK_LEVEL } from '../player/SpeedFocus.js';
+import { DamageOverlay } from '../fx/DamageOverlay.js';
+import { BattleDamage } from '../fx/BattleDamage.js';
 import { Avatar } from '../character/Avatar.js';
 import { defaultCharacter, migrateCharacter } from '../character/options.js';
 import { SaveSystem } from '../save/SaveSystem.js';
@@ -31,6 +35,7 @@ import { MainMenu, CharacterCreator, GameMenu, ResultScreen } from '../ui/Menus.
 const _v = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 const _e = new THREE.Euler();
+const _fwd = new THREE.Vector3();
 const PRESET_ORDER = ['low', 'medium', 'high'];
 
 // Game: owns every system and the state machine
@@ -61,7 +66,14 @@ export class Game {
     this.player = new Player(this);
     this.transformation = new Transformation(this);
     this.training = new Training(this);
-    this.boss = new Raxor(this);
+    this.boss = new Boss(this);
+    this.currentBossId = 'raxor';
+    this.unlockNews = [];
+    this.speedFocus = new SpeedFocus(this);
+    this.damageOverlay = new DamageOverlay(this.renderer.camera);
+    // Wounds on your own first-person forearms and fists.
+    this.handWounds = new BattleDamage(this.renderer.rig, this, { forward: () => _fwd.copy(this.player.headForward).negate(), scale: 0.45 });
+    this.lastInput = null;
     this.mirror = new Mirror(this);
     this.mirror.setCharacter(this.character);
     this.hands.applyCharacter(this.character);
@@ -85,6 +97,7 @@ export class Game {
     this.resultTimer = 0;
     this.clock = new THREE.Clock();
     this.wireEvents();
+    this.setupActionButtons();
     this.applySettings();
     this.resetPlayerPosition();
 
@@ -226,6 +239,8 @@ export class Game {
   resetPlayerPosition() {
     const rig = this.renderer.rig;
     const cam = this.renderer.camera;
+    if (this.player.flying) this.player.land();
+    this.player.altitude = 0;
     if (this.isXR) {
       _e.setFromQuaternion(cam.quaternion, 'YXZ');
       rig.rotation.set(0, -_e.y, 0);
@@ -274,6 +289,8 @@ export class Game {
   toMainMenu() {
     this.save();
     this.boss.stop();
+    this.speedFocus.reset();
+    this.combat.clearProjectiles();
     this.transformation.forceBase();
     this.training.setEnabled(false);
     this.removePreview();
@@ -304,8 +321,10 @@ export class Game {
       this.progress = new Progression(save.progress);
     }
     this.applyCharacter();
-    this.startTraining(this.progress.isFormUnlocked('ssj1') ? 'punch' : 'punch');
+    this.startTraining('punch');
     this.banner.push({ title: `Welcome back, ${this.character.name}!`, subtitle: `Power Level ${formatNumber(this.progress.basePowerLevel())}`, duration: 2.5 });
+    // Older saves: grant anything new content now unlocks at their level.
+    this.progress.refreshUnlocks();
   }
 
   openCreator() {
@@ -333,8 +352,10 @@ export class Game {
     }
   }
 
+  // Creator preview cycles through every form.
   togglePreviewForm() {
-    this.previewForm = this.previewForm === 'base' ? 'ssj1' : 'base';
+    const forms = FORM_ORDER.filter((id) => FORMS[id].playable);
+    this.previewForm = forms[(forms.indexOf(this.previewForm) + 1) % forms.length];
     this.previewAvatar?.setForm(this.previewForm);
   }
 
@@ -369,6 +390,7 @@ export class Game {
     this.menuOpen = false;
     this.state = 'training';
     this.combat.clearProjectiles();
+    this.speedFocus.reset();
     this.training.setEnabled(true);
     this.training.setActivity(activity, true);
     if (wasBoss) {
@@ -382,40 +404,60 @@ export class Game {
     this.save();
   }
 
-  startBoss() {
+  // Any boss can be challenged at any Power Level.
+  startBoss(id = this.currentBossId) {
+    const def = bossById(id) || BOSSES[0];
+    this.currentBossId = def.id;
     this.hideAllMenus();
     this.menuOpen = false;
     this.training.setEnabled(false);
     this.combat.clearProjectiles();
+    this.speedFocus.reset();
+    this.unlockNews = [];
     this.state = 'boss';
     this.transformation.forceBase();
     this.player.resetResources();
     this.player.ki = this.progress.maxKi();
     const a = this.progress.data.bossAttempts;
-    a.raxor = (a.raxor || 0) + 1;
+    a[def.id] = (a[def.id] || 0) + 1;
+    this.boss.setBoss(def.id);
     this.fadeTo(() => {
       this.resetPlayerPosition();
-      this.boss.start();
+      this.boss.start(def.id);
     });
     this.hud.setMode(this.isXR, true);
-    this.banner.push({ title: 'BOSS BATTLE', subtitle: `Raxor · Power Level ${formatNumber(this.boss.def.powerLevel)}`, color: '#ff6a6a', duration: 2.6, big: true });
+    this.banner.push({ title: 'BOSS BATTLE', subtitle: `${def.name} · Power Level ${formatNumber(def.powerLevel)}`, color: '#ff6a6a', duration: 2.6, big: true });
     this.updatePointerMode();
   }
 
   showResult(win) {
     this.state = 'result';
+    this.menuOpen = false;
+    this.gameMenu.panel.hide();
     this.boss.stop();
     this.transformation.forceBase();
+    const def = this.boss.def;
     const pl = this.progress.basePowerLevel();
     const lines = [];
     if (win) {
-      lines.push(`You defeated Raxor at Power Level ${formatNumber(this.progress.powerLevel(this.lastFightForm || 'base'))}.`);
-      lines.push('Rewards: +40 XP to every stat.');
-      if (this.firstRaxorWin) lines.push('NEW MILESTONE: The Gravity Chamber and Lord Veyron await in Phase 2!');
+      lines.push(`You defeated ${def.name} at Power Level ${formatNumber(this.progress.powerLevel(this.lastFightForm || 'base'))}.`);
+      lines.push(`Rewards: +${def.rewards.xp} XP to every stat.`);
+      for (const n of this.unlockNews.slice(0, 3)) lines.push(`NEW: ${n}`);
+      const next = BOSSES.find((b) => !this.progress.beat(b.id));
+      if (next) lines.push(`Next challenge: ${next.name} (Power Level ${formatNumber(next.powerLevel)}).`);
     } else {
-      const ssj = this.progress.isFormUnlocked('ssj1');
-      lines.push(`Raxor's Power Level is ${formatNumber(this.boss.def.powerLevel)}. Yours is ${formatNumber(pl)}.`);
-      lines.push(ssj ? 'Tip: transform into a Super Saiyan early in the fight. Block (left grip / Q) when his fist glows red.' : `Tip: train to Power Level 5,000 to unlock Super Saiyan. Your lowest stat is ${STAT_LABELS[this.progress.lowestStat()]}.`);
+      const top = this.progress.topForm();
+      lines.push(`${def.name}'s Power Level is ${formatNumber(def.powerLevel)}. Yours is ${formatNumber(pl)}${top !== 'base' ? ` (${formatNumber(this.progress.powerLevel(top))} as ${FORMS[top].name})` : ''}.`);
+      const tips = [];
+      if (top !== 'base' && this.lastFightForm !== top) tips.push(`transform into ${FORMS[top].name} early (power up, press A / T, repeat to climb forms)`);
+      if (top === 'base') tips.push(`train to Power Level 5,000 to unlock Super Saiyan (your lowest stat is ${STAT_LABELS[this.progress.lowestStat()]})`);
+      if (def.attacks.slam) tips.push('get out of the red ring before the slam lands');
+      if (def.attacks.beam) tips.push('step out of the red aim line when the beam charges');
+      if (def.attacks.barrier) tips.push('punch through the purple barrier, ki is absorbed');
+      if (def.attacks.teleport) tips.push('turn around when you hear BEHIND YOU');
+      tips.push('block (left grip / Q) when a fist glows red');
+      if (this.speedFocus.unlocked) tips.push('use slow motion (right stick click / F) to read big attacks');
+      lines.push(`Tip: ${tips.slice(0, 2).join('; ')}.`);
     }
     this.result.set({ win, lines });
     this.result.panel.show();
@@ -483,10 +525,15 @@ export class Game {
         this.progress.addXp('stamina', 2, 'block');
       }
       this.effects.burst(h.point, h.blocked ? 0x4cc3ff : 0xff5a5a, 10, 2, 0.05, 0.3);
+      if (!h.blocked && this.settings.battleDamage !== false) {
+        const frac = this.player.health / this.progress.maxHealth();
+        this.damageOverlay.flash(clamp(0.35 + h.damage / 25, 0.35, 1));
+        this.handWounds.hit(h.point, null, frac, clamp(h.damage / 20, 0.2, 1));
+      }
     });
     bus.on('player:defeated', () => {
       if (this.state === 'boss') {
-        this.boss.say('Ha! Come back when you\'re a real warrior!');
+        this.boss.say(this.boss.def.lines.win);
         this.lastFightForm = this.player.form;
         this.resultTimer = 1.8;
         this.pendingResult = false;
@@ -496,17 +543,16 @@ export class Game {
         bus.emit('hud:message', { text: 'You collapsed! Catch your breath…', color: '#ff9a4d' });
       }
     });
-    bus.on('boss:defeated', () => {
+    bus.on('boss:defeated', ({ id }) => {
       this.lastFightForm = this.player.form;
+      const def = bossById(id) || this.boss.def;
       const d = this.progress.data;
-      this.firstRaxorWin = !d.bossesDefeated.includes('raxor');
-      if (this.firstRaxorWin) {
-        d.bossesDefeated.push('raxor');
-        if (!d.gravityUnlocked.includes(10)) d.gravityUnlocked.push(10);
-      }
-      for (const k of ['strength', 'speed', 'ki', 'stamina']) this.progress.addXp(k, 40, 'boss-reward');
+      const first = !d.bossesDefeated.includes(def.id);
+      if (first) d.bossesDefeated.push(def.id);
+      for (const k of ['strength', 'speed', 'ki', 'stamina']) this.progress.addXp(k, def.rewards.xp, 'boss-reward');
+      this.progress.refreshUnlocks();
       this.audio.fanfare();
-      this.banner.push({ title: 'RAXOR DEFEATED!', subtitle: this.firstRaxorWin ? 'First victory! New milestone unlocked' : 'Victory!', color: '#ffcc33', duration: 3.2, big: true, priority: true });
+      this.banner.push({ title: `${def.name.toUpperCase()} DEFEATED!`, subtitle: first ? 'First victory! New rewards unlocked' : 'Victory!', color: '#ffcc33', duration: 3.2, big: true, priority: true });
       this.haptic('left', 1, 300);
       this.haptic('right', 1, 300);
       this.resultTimer = 3.6;
@@ -527,6 +573,7 @@ export class Game {
       this.save();
     });
     bus.on('form:unlocked', ({ form }) => {
+      if (this.state === 'boss') this.unlockNews.push(`${FORMS[form].name} transformation`);
       this.audio.fanfare();
       this.haptic('left', 1, 300);
       this.haptic('right', 1, 300);
@@ -541,6 +588,57 @@ export class Game {
         this.boss.say(this.boss.powerRatio() > 1 ? 'What?! Your power… it\'s skyrocketing!' : 'A golden aura? It\'s just a trick!', '#ffb0b0');
         this.boss.knock.add(this.boss.group.position.clone().sub(this.player.headWorld).setY(0).normalize().multiplyScalar(2.5));
       }
+      this.save();
+    });
+    bus.on('attack:unlocked', ({ attack, equipped }) => {
+      if (this.state === 'boss') this.unlockNews.push(`${attack.name} attack`);
+      this.audio.levelUp();
+      this.banner.push({ title: `NEW ATTACK: ${attack.name.toUpperCase()}`, subtitle: equipped ? `Equipped. ${this.isXR ? 'Press B' : 'Press E'} to switch to it` : 'Equip it in the Attacks menu', color: '#4cc3ff', duration: 3 });
+      this.save();
+    });
+    bus.on('gravity:unlocked', ({ gravity }) => {
+      if (this.state === 'boss') this.unlockNews.push(`${gravity}x gravity training`);
+      this.banner.push({ title: `${gravity}x GRAVITY UNLOCKED`, subtitle: 'Set it in Menu > Training for bonus XP', color: '#ff6a6a', duration: 3 });
+    });
+    bus.on('timechamber:unlocked', () => {
+      if (this.state === 'boss') this.unlockNews.push('the Hyperbolic Time Chamber');
+      this.audio.fanfare();
+      this.banner.push({ title: 'TIME CHAMBER UNLOCKED', subtitle: 'Menu > Training > Location. 3x XP inside', color: '#ffffff', duration: 3.5, big: true });
+    });
+    bus.on('timechamber:milestone', ({ days, xp }) => {
+      this.audio.fanfare();
+      this.banner.push({ title: `DAY ${days} IN THE TIME CHAMBER`, subtitle: `+${Math.round(xp)} XP to every stat`, color: '#ffffff', duration: 3 });
+    });
+    bus.on('slowmo:unlocked', () => {
+      this.audio.fanfare();
+      this.banner.push({ title: 'SLOW MOTION UNLOCKED!', subtitle: this.isXR ? 'Click the right thumbstick to slow time' : 'Press F (or the Slow-Mo button) to slow time', color: '#5cff8a', duration: 4, big: true, priority: true });
+    });
+    bus.on('slowmo', ({ on }) => {
+      if (on) this.banner.push({ title: 'SLOW MOTION', color: '#7fd8ff', duration: 1.0, priority: true });
+      this.updateActionButtons(true);
+    });
+    bus.on('kaioken', ({ on }) => {
+      if (on) {
+        this.audio.kaioken();
+        this.banner.push({ title: 'KAIO-KEN!', subtitle: 'Damage and speed up · burns stamina', color: '#ff4a3a', duration: 1.6, priority: true });
+      } else bus.emit('hud:message', { text: 'Kaio-ken wore off', color: '#ff8a8a' });
+    });
+    bus.on('flight:changed', ({ flying }) => {
+      this.audio.flight(flying);
+      if (flying) {
+        bus.emit('hud:message', { text: this.isXR ? 'Flying! Left stick: move where you look · Right stick up/down: rise/descend' : 'Flying! WASD move where you look · R rise · V descend · G land', color: '#bfe6ff', duration: 4 });
+      }
+      this.updateActionButtons(true);
+    });
+    bus.on('beam:fired', ({ attack }) => {
+      this.banner.push({ title: `${attack.name.toUpperCase()}!`, color: '#7fd8ff', duration: 1.2, priority: true });
+      this.haptic('left', 1, 200);
+      this.haptic('right', 1, 200);
+    });
+    bus.on('beam:start', () => this.audio.beam(true));
+    bus.on('beam:end', () => this.audio.beam(false));
+    bus.on('spar:won', ({ level, shadow }) => {
+      this.banner.push({ title: 'KNOCKDOWN!', subtitle: `${shadow ? 'Your shadow' : `${level.name} partner`} is down · bonus XP to every stat`, color: '#ffcc33', duration: 2.6, priority: true });
       this.save();
     });
     bus.on('powerdown', () => this.banner.push({ title: 'Powered down', color: '#aab3d6', duration: 1.2 }));
@@ -582,8 +680,12 @@ export class Game {
 
     const active = this.gameplayActive;
     const paused = this.menuOpen && (this.state === 'boss');
+    this.lastInput = input;
     if (active) {
       if (input.hands.right.secondaryDown) this.player.cycleAttack();
+      // Left stick click / G / Fly button: fly or land. Right stick click / F: slow motion.
+      if (input.hands.left.stickPressDown && this.player.alive) this.player.toggleFlight();
+      if (input.hands.right.stickPressDown && this.player.alive) this.speedFocus.activate();
       this.player.updateBlocking(input, this.hands);
     } else this.player.blocking = false;
     this.player.updateMovement(dt, input, active);
@@ -592,12 +694,22 @@ export class Game {
       this.player.updatePunching(dt, this.hands);
     }
     this.player.updateFiring(dt, input, this.hands, active && this.player.alive);
+    // Slow motion slows only enemies and their attacks; you keep full speed.
+    const ets = this.speedFocus.update(dt, active && this.player.alive);
+    this.arena.slow = clamp((1 - ets) / 0.8, 0, 1);
     if (!paused) {
       this.player.updateResources(dt, { charging: this.transformation.state === 'charging' });
-      this.combat.update(dt);
-      this.boss.update(dt);
+      this.combat.update(dt, ets);
+      this.boss.update(dt * ets);
     }
-    this.training.update(dt);
+    this.training.update(dt, dt * ets);
+    const fighting = this.state === 'training' || this.state === 'boss';
+    const hpFrac = this.player.health / this.progress.maxHealth();
+    if (fighting) this.handWounds.update(dt, hpFrac);
+    else if (this.handWounds.decals.length) this.handWounds.reset();
+    this.damageOverlay.update(dt, { healthFrac: fighting ? hpFrac : 1, enabled: this.settings.battleDamage !== false, slow: this.arena.slow });
+    this.audio.beamCharge(this.player.beam.charging ? this.player.beam.charge : 0);
+    this.updateActionButtons();
     this.mirror.update(dt);
     this.arena.update(dt);
     this.effects.update(dt);
@@ -632,10 +744,47 @@ export class Game {
 
   updatePlayerAuraPosition() {
     const head = this.player.headWorld;
-    this.playerAura.group.position.set(head.x, this.renderer.rig.position.y > 0 ? 0 : 0, head.z);
+    this.playerAura.group.position.set(head.x, this.player.groundY(), head.z);
     // In first person the aura shell is centred on the body (slightly behind the eyes).
     const f = this.player.flatForward(_v.clone());
     this.playerAura.group.position.addScaledVector(f, -0.1);
+  }
+
+  // ---- On-screen action buttons (desktop): Fly and Slow-Mo -------------------
+  setupActionButtons() {
+    this.actionBar = document.getElementById('action-buttons');
+    this.btnFly = document.getElementById('btn-fly');
+    this.btnSlow = document.getElementById('btn-slowmo');
+    const press = (key) => (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.desktopInput.virtual[key] = true;
+      this.desktopInput.requestLock();
+    };
+    this.btnFly?.addEventListener('click', press('fly'));
+    this.btnSlow?.addEventListener('click', press('slowmo'));
+    this.actionTimer = 0;
+  }
+
+  updateActionButtons(force = false) {
+    if (!this.actionBar) return;
+    this.actionTimer -= 1 / 60;
+    if (!force && this.actionTimer > 0) return;
+    this.actionTimer = 0.2;
+    const show = !this.isXR && this.gameplayActive;
+    this.actionBar.classList.toggle('hidden', !show);
+    if (!show) return;
+    const flying = this.player.flying;
+    this.btnFly.innerHTML = `${flying ? 'LAND' : 'FLY'} <kbd>G</kbd>`;
+    this.btnFly.classList.toggle('on', flying);
+    const sf = this.speedFocus;
+    let label = 'SLOW-MO <kbd>F</kbd>';
+    if (!sf.unlocked) label = `SLOW-MO <small>Speed Lv ${SLOWMO_UNLOCK_LEVEL}</small>`;
+    else if (sf.active > 0) label = `SLOW-MO ${Math.ceil(sf.active)}s`;
+    else if (sf.cooldown > 0) label = `SLOW-MO <small>${Math.ceil(sf.cooldown)}s</small>`;
+    this.btnSlow.innerHTML = label;
+    this.btnSlow.classList.toggle('on', sf.active > 0);
+    this.btnSlow.classList.toggle('locked', !sf.unlocked || (sf.cooldown > 0 && !(sf.active > 0)));
   }
 
   updatePreview(dt) {

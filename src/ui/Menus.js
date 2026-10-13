@@ -1,9 +1,10 @@
 import { Panel, COLORS } from './Panel.js';
 import { FORMS, FORM_ORDER } from '../progression/forms.js';
 import { ATTACKS, ATTACK_ORDER } from '../progression/attacks.js';
-import { STAT_KEYS, STAT_LABELS, STAT_TRAINING, xpToNext } from '../progression/Progression.js';
-import { ACTIVITIES } from '../training/Training.js';
-import { BOSSES } from '../boss/Raxor.js';
+import { STAT_KEYS, STAT_LABELS, STAT_TRAINING, xpToNext, GRAVITY_LEVELS, TIME_CHAMBER_UNLOCK } from '../progression/Progression.js';
+import { ACTIVITIES, SPAR_LEVELS } from '../training/Training.js';
+import { SLOWMO_UNLOCK_LEVEL } from '../player/SpeedFocus.js';
+import { BOSSES } from '../boss/bosses.js';
 import { GRAPHICS_PRESETS } from '../settings/Settings.js';
 import {
   SKIN_TONES, HAIR_STYLES, HAIR_COLORS, EYE_COLORS, BODY_TYPES, BUILDS, BROWS, SCARS, EXPRESSIONS,
@@ -28,7 +29,7 @@ export class MainMenu {
     ui.background();
     ui.text('DRAGON BALL', ui.W / 2, 140, { size: 110, align: 'center', color: COLORS.gold, stroke: '#7a2a00' });
     ui.text('X', ui.W / 2, 250, { size: 120, align: 'center', color: '#ffffff', stroke: '#1a4ea8' });
-    ui.text('Saiyan Training Prototype · Phase 1', ui.W / 2, 315, { size: 34, align: 'center', color: COLORS.muted, weight: 'normal' });
+    ui.text('Saiyan Training · Phases 1–3', ui.W / 2, 315, { size: 34, align: 'center', color: COLORS.muted, weight: 'normal' });
     const bw = 620;
     const x = (ui.W - bw) / 2;
     let y = 370;
@@ -136,12 +137,12 @@ export class CharacterCreator {
     } else if (this.tab === 'hair') {
       arrowRow('hair', 'Hairstyle', HAIR_STYLES, 'hairStyle');
       swatchRow('hairc', 'Hair color', HAIR_COLORS, 'hairColor');
-      ui.wrap('Super Saiyan turns any hairstyle golden and lifts it. Use Preview to see it.', labelX, y + 40, ui.W - 80, { size: 26 });
+      ui.wrap('Every Super Saiyan form restyles your hair. Use Preview to cycle through them.', labelX, y + 40, ui.W - 80, { size: 26 });
     } else {
       arrowRow('outfit', 'Outfit', OUTFITS, 'outfit');
       for (const sec of OUTFIT_SECTIONS) swatchRow(sec.key, sec.name, OUTFIT_PALETTE, sec.key);
     }
-    ui.button('preview-ssj', g.previewForm === 'ssj1' ? 'Preview: Super Saiyan' : 'Preview: Base', 40, ui.H - 118, 440, 90, {
+    ui.button('preview-ssj', `Preview: ${FORMS[g.previewForm].name}`, 40, ui.H - 118, 440, 90, {
       size: 30, onClick: () => { g.togglePreviewForm(); },
     });
     ui.button('start', 'Begin Training!', ui.W - 520, ui.H - 118, 480, 90, { size: 42, color: '#b4560f', onClick: () => g.finishCreation() });
@@ -211,7 +212,17 @@ export class GameMenu {
       y += 60;
     }
     const low = p.lowestStat();
-    ui.wrap(`Tip: ${STAT_TRAINING[low]} gives +50% XP right now (your lowest stat).`, a.x, y + 30, 680, { size: 26, color: COLORS.green });
+    y = ui.wrap(`Tip: ${STAT_TRAINING[low]} gives +50% XP right now (your lowest stat).`, a.x, y + 30, 680, { size: 26, color: COLORS.green });
+    // Quick actions (also on the left / right thumbstick clicks, G / F on desktop).
+    const sf = g.speedFocus;
+    ui.button('act-fly', g.player.flying ? 'Land' : 'Fly', a.x, y + 10, 330, 80, {
+      size: 34, color: '#1a4ea8', sub: g.isXR ? 'Left stick click' : 'G',
+      onClick: () => { g.closeGameMenu(); g.player.toggleFlight(); },
+    });
+    ui.button('act-slowmo', 'Slow Motion', a.x + 350, y + 10, 330, 80, {
+      size: 32, enabled: sf.unlocked, sub: sf.unlocked ? (g.isXR ? 'Right stick click' : 'F') : `Speed Lv ${SLOWMO_UNLOCK_LEVEL}`,
+      onClick: () => { g.closeGameMenu(); sf.activate(); },
+    });
     // Right column: goal + transformations
     const rx = a.x + 760;
     const goal = p.nextGoal(BOSSES);
@@ -233,39 +244,73 @@ export class GameMenu {
 
   drawTraining(ui, a) {
     const g = this.game;
+    const p = g.progress;
+    const t = g.training;
     let y = a.y;
-    for (const act of ACTIVITIES) {
-      const locked = act.requires && !g.progress.isFormUnlocked(act.requires);
-      const st = act.stat !== 'mastery' ? g.progress.data.stats[act.stat] : null;
-      const sub = locked ? 'Unlock Super Saiyan first' : st ? `${STAT_LABELS[act.stat]} Lv ${st.level}` : `Mastery Lv ${g.progress.mastery('ssj1').level}`;
-      ui.button(`act-${act.id}`, act.name, a.x, y, 560, 96, {
-        size: 34, sub, enabled: !locked, selected: g.training.activity === act.id && g.state === 'training',
+    // Activities: two columns.
+    const colW = (a.w - 20) / 2;
+    ACTIVITIES.forEach((act, i) => {
+      const locked = act.requires && !p.isFormUnlocked(act.requires);
+      const st = STAT_KEYS.includes(act.stat) ? p.data.stats[act.stat] : null;
+      const sub = locked ? 'Unlock Super Saiyan first'
+        : st ? `${STAT_LABELS[act.stat]} Lv ${st.level}`
+        : act.stat === 'all' ? `All stats · ${SPAR_LEVELS.find((l) => l.id === t.prefs.difficulty)?.name || 'Normal'}`
+        : `Mastery Lv ${p.mastery(p.topForm() === 'base' ? 'ssj1' : p.topForm()).level}`;
+      ui.button(`act-${act.id}`, act.name, a.x + (i % 2) * (colW + 20), y + Math.floor(i / 2) * 94, colW, 84, {
+        size: 32, sub, enabled: !locked, selected: t.activity === act.id && g.state === 'training',
         onClick: () => { g.startTraining(act.id); },
       });
-      ui.wrap(act.desc, a.x + 590, y + 38, a.w - 600, { size: 24, color: COLORS.muted });
-      y += 110;
+    });
+    y += Math.ceil(ACTIVITIES.length / 2) * 94 + 6;
+    const cur = ACTIVITIES.find((x) => x.id === t.activity);
+    y = ui.wrap(cur.desc, a.x, y + 22, a.w, { size: 24, color: COLORS.muted });
+    y += 8;
+    const row = (label, opts, onPick) => {
+      ui.text(label, a.x, y + 50, { size: 28, color: COLORS.gold });
+      const bx = a.x + 300;
+      const bw = (a.w - 300 - (opts.length - 1) * 10) / opts.length;
+      opts.forEach((o, i) => ui.button(`${label}-${o.id}`, o.name, bx + i * (bw + 10), y + 6, bw, 70, {
+        size: 26, selected: o.selected, enabled: o.enabled !== false, sub: o.sub, onClick: () => onPick(o.id),
+      }));
+      y += 82;
+    };
+    row('Partner', SPAR_LEVELS.map((l) => ({ id: l.id, name: l.name, selected: t.prefs.difficulty === l.id })), (id) => {
+      t.setDifficulty(id);
+      if (g.state === 'training') g.startTraining('spar');
+    });
+    row('Gravity', GRAVITY_LEVELS.map((l) => {
+      const open = p.data.gravityUnlocked.includes(l.g);
+      return { id: l.g, name: `${l.g}x`, selected: t.gravity === l.g, enabled: open, sub: open ? undefined : `PL ${formatNumber(l.powerLevel)}` };
+    }), (v) => t.setGravity(v));
+    const tc = p.data.timeChamber.unlocked;
+    row('Location', [
+      { id: 'arena', name: 'Training Grounds', selected: t.location === 'arena' },
+      { id: 'timechamber', name: 'Time Chamber', selected: t.location === 'timechamber', enabled: tc, sub: tc ? `Day ${t.chamberDays()} · 3x XP` : `PL ${formatNumber(TIME_CHAMBER_UNLOCK.powerLevel)}` },
+    ], (id) => g.fadeTo(() => t.setLocation(id)));
+    const lv = GRAVITY_LEVELS.find((l) => l.g === t.gravity);
+    if (lv?.recommended && p.basePowerLevel() < lv.recommended) {
+      ui.text(`Warning: ${lv.g}x gravity strains you below Power Level ${formatNumber(lv.recommended)}.`, a.x, y + 30, { size: 24, color: COLORS.red, weight: 'normal' });
     }
-    ui.text('GRAVITY CHAMBER  (Phase 2)', a.x, y + 30, { size: 30, color: '#7b84a8' });
-    ui.text('1x · 10x · 20x · 50x · 100x — unlocks with progression', a.x, y + 66, { size: 24, color: '#7b84a8', weight: 'normal' });
   }
 
   drawBoss(ui, a) {
     const g = this.game;
     let y = a.y;
     const pl = g.currentPowerLevel();
+    const top = g.progress.powerLevel(g.progress.topForm());
+    ui.text('Challenge any boss at any Power Level. Damage scales with the gap.', a.x, y + 24, { size: 24, color: COLORS.muted, weight: 'normal' });
+    y += 40;
     for (const b of BOSSES) {
-      const beaten = g.progress.data.bossesDefeated.includes(b.id);
+      const beaten = g.progress.beat(b.id);
       const attempts = g.progress.data.bossAttempts[b.id] || 0;
-      ui.text(`${b.name}`, a.x, y + 40, { size: 40, color: b.available ? '#ff8a8a' : '#7b84a8' });
-      ui.text(b.title + (b.available ? '' : `  ·  Phase ${b.phase}`), a.x, y + 76, { size: 24, color: COLORS.muted, weight: 'normal' });
-      ui.text(`PL ${formatNumber(b.powerLevel)}`, a.x + 560, y + 40, { size: 32, color: b.available ? COLORS.text : '#7b84a8' });
-      if (b.available) {
-        const ratio = pl / b.powerLevel;
-        const verdict = ratio > 3 ? 'You overwhelm him' : ratio > 1 ? 'You are stronger' : ratio > 0.25 ? 'Tough fight' : 'Very dangerous';
-        ui.text(`${verdict}${beaten ? '  ·  DEFEATED ★' : ''}${attempts ? `  ·  ${attempts} attempt${attempts > 1 ? 's' : ''}` : ''}`, a.x + 560, y + 76, { size: 24, color: ratio > 1 ? COLORS.green : COLORS.orange, weight: 'normal' });
-        ui.button(`fight-${b.id}`, beaten ? 'Rematch' : 'Challenge!', a.x + a.w - 300, y + 10, 300, 80, { size: 36, color: '#a8241a', onClick: () => g.startBoss() });
-      }
-      y += 112;
+      ui.text(`${b.name}`, a.x, y + 40, { size: 38, color: '#ff8a8a' });
+      ui.text(b.title, a.x, y + 74, { size: 24, color: COLORS.muted, weight: 'normal' });
+      ui.text(`PL ${formatNumber(b.powerLevel)}`, a.x + 520, y + 40, { size: 32, color: COLORS.text });
+      const ratio = Math.max(pl, top) / b.powerLevel;
+      const verdict = ratio > 3 ? 'You overwhelm them' : ratio > 1 ? 'You are stronger' : ratio > 0.25 ? 'Tough fight' : ratio > 0.02 ? 'Very dangerous' : 'Nearly impossible';
+      ui.text(`${verdict}${beaten ? '  ·  DEFEATED ★' : ''}${attempts ? `  ·  ${attempts} tr${attempts > 1 ? 'ies' : 'y'}` : ''}`, a.x + 520, y + 74, { size: 24, color: ratio > 1 ? COLORS.green : ratio > 0.25 ? COLORS.orange : COLORS.red, weight: 'normal', maxWidth: a.w - 840 });
+      ui.button(`fight-${b.id}`, beaten ? 'Rematch' : 'Challenge!', a.x + a.w - 280, y + 12, 280, 76, { size: 34, color: '#a8241a', onClick: () => g.startBoss(b.id) });
+      y += 104;
     }
   }
 
@@ -277,9 +322,11 @@ export class GameMenu {
       const atk = id ? ATTACKS[id] : null;
       ui.button(`slot-${i}`, atk ? atk.name : 'Empty slot', a.x + i * ((a.w + 12) / 4), a.y + 50, (a.w + 12) / 4 - 12, 80, {
         size: 28, selected: atk && g.player.equippedAttack().id === atk.id, enabled: !!atk,
-        onClick: () => { const eq = p.data.equipped.filter(Boolean); g.player.selectedAttack = eq.indexOf(id); },
+        onClick: () => { this.slot = i; if (id) { const eq = p.data.equipped.filter(Boolean); g.player.selectedAttack = eq.indexOf(id); } },
       });
     });
+    if (this.slot == null) this.slot = 0;
+    ui.text(`Tap an attack below to put it in slot ${this.slot + 1}`, a.x + a.w, a.y + 30, { size: 24, color: COLORS.muted, align: 'right', weight: 'normal' });
     let y = a.y + 170;
     ui.text('Attack', a.x, y, { size: 26, color: COLORS.muted });
     ui.text('Dmg', a.x + 520, y, { size: 26, color: COLORS.muted });
@@ -293,6 +340,19 @@ export class GameMenu {
       const has = p.data.unlockedAttacks.includes(id);
       const col = has ? COLORS.text : '#7b84a8';
       y += 44;
+      if (has) {
+        ui.button(`equip-${id}`, '', a.x - 10, y - 34, 510, 44, {
+          size: 1, color: p.data.equipped.includes(id) ? '#2a4a8a' : undefined,
+          onClick: () => {
+            const eq = p.data.equipped;
+            const other = eq.indexOf(id);
+            if (other >= 0) eq[other] = eq[this.slot];
+            eq[this.slot] = id;
+            // Keep filled slots first so cycling skips the gaps.
+            g.player.selectedAttack = Math.max(0, eq.filter(Boolean).indexOf(id));
+          },
+        });
+      }
       ui.text(`${has ? '★' : '◇'} ${atk.name}`, a.x, y, { size: 28, color: col, maxWidth: 500 });
       ui.text(String(atk.damage), a.x + 520, y, { size: 26, color: col, weight: 'normal' });
       ui.text(String(atk.kiCost), a.x + 620, y, { size: 26, color: col, weight: 'normal' });
@@ -326,6 +386,7 @@ export class GameMenu {
     row('Effects', [['low', 'Low'], ['medium', 'Med'], ['high', 'High']], s.visualIntensity, (v) => { s.visualIntensity = v; }, left, half);
     row('Haptics', [[true, 'On'], [false, 'Off']], s.haptics, (v) => { s.haptics = v; }, left, half);
     row('Volume', [[0, 'Off'], [0.4, '40%'], [0.8, '80%'], [1, 'Max']], s.masterVolume, (v) => { s.masterVolume = v; }, left, half);
+    row('Blood & scars', [[true, 'On'], [false, 'Off']], s.battleDamage !== false, (v) => { s.battleDamage = v; }, left, half);
     ui.text(`FPS ${Math.round(g.perf.fps)}${g.perf.reduced ? ' · auto-reduced' : ''}`, left, y + 40, { size: 24, color: COLORS.muted, weight: 'normal' });
     y = y0;
     ui.text('VR COMFORT', right, y + 20, { size: 28, color: COLORS.gold });
@@ -360,6 +421,6 @@ export class ResultScreen {
       y = ui.wrap(line, 80, y + 20, ui.W - 160, { size: 32, color: COLORS.text });
     }
     ui.button('res-train', 'Back to Training', 60, ui.H - 150, 520, 100, { size: 38, color: '#b4560f', onClick: () => g.startTraining(d.win ? 'transform' : STAT_ACTIVITY[g.progress.lowestStat()]) });
-    ui.button('res-again', d.win ? 'Rematch' : 'Try Again', ui.W - 580, ui.H - 150, 520, 100, { size: 38, onClick: () => g.startBoss() });
+    ui.button('res-again', d.win ? 'Rematch' : 'Try Again', ui.W - 580, ui.H - 150, 520, 100, { size: 38, onClick: () => g.startBoss(g.currentBossId) });
   }
 }

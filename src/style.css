@@ -73,6 +73,23 @@ html, body {
   position: fixed; left: 12px; top: 12px; width: 384px; height: 256px; z-index: 4; pointer-events: none;
   image-rendering: auto;
 }
+#action-buttons {
+  position: fixed; right: 16px; top: 50%; transform: translateY(-50%); z-index: 6;
+  display: flex; flex-direction: column; gap: 12px;
+}
+#action-buttons button {
+  font: inherit; font-weight: bold; font-size: 18px; min-width: 132px; padding: 14px 16px; border-radius: 14px;
+  border: 2px solid rgba(255,255,255,0.85); background: rgba(20, 40, 110, 0.82); color: #fff; cursor: pointer;
+  box-shadow: 0 0 14px rgba(76, 195, 255, 0.45);
+}
+#action-buttons button:hover { filter: brightness(1.2); }
+#action-buttons button.on { background: linear-gradient(180deg, #ffb52b, #ff6a00); color: #2a1200; border-color: #fff3c4; }
+#action-buttons button.locked { opacity: 0.6; }
+#action-buttons kbd {
+  display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 4px; font-size: 13px;
+  background: rgba(255,255,255,0.2); font-family: inherit;
+}
+#action-buttons small { display: block; font-size: 12px; font-weight: normal; opacity: 0.85; }
 #fade { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity 0.25s; z-index: 10; }
 .hidden { display: none !important; }
 

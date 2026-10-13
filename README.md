@@ -4,7 +4,7 @@ An anime-style VR training and fighting game for **Meta Quest 2 / Quest 3** (sta
 
 Built with **Three.js + WebXR** (real `immersive-vr` sessions) and **Vite**. Every model, effect and sound is procedural and original: no downloaded models, textures, audio files, paid plugins or APIs.
 
-> **Status: Phase 1 playable prototype.** See [What has been verified](#what-has-been-verified-and-what-needs-a-headset) before trusting any performance claim: nothing here has been run on a real headset yet.
+> **Status: Phases 1–3 playable prototype.** See [What has been verified](#what-has-been-verified-and-what-needs-a-headset) before trusting any performance claim: nothing here has been run on a real headset yet.
 
 ---
 
@@ -33,7 +33,19 @@ Open <http://localhost:5173> and click **Play on Desktop**.
 3. **Power Level 5,000 unlocks Super Saiyan** (about 5–10 minutes of mixed training). Stat levels raise your Power Level about 18% each.
 4. **Transform**: hold **both grips** (Space) to power up. Hands glow, energy streams up your arms, the aura grows, lightning arcs between your hands, the hum and haptics build. When the meter is full, press **A** (T): a build-up, a golden burst and shockwave, your hands and the mirror reflection turn Super Saiyan. The form drains ki. Press A (T) again to power down.
 5. **Fight Raxor** (menu → Bosses). He punches (red glowing fist and red floor marker: block or step away), fires ki volleys, and below 50% HP launches a charged mega-blast with a big warning. As a fresh Base Saiyan he is a real struggle. After training and transforming, your hits knock him back, crack the ground and finish him fast. He reacts to your power level.
-6. **Win** for XP and the next milestone (Gravity Chamber and Lord Veyron, Phase 2). **Lose** and you get a tip about what to train next; nothing is lost.
+6. **Win** for XP and new unlocks. **Lose** and you get a tip about what to train next; nothing is lost.
+
+## Phases 2 and 3: everything else
+
+- **Five bosses, all challengeable at any Power Level** (menu → Bosses). Raxor (18k), Lord Veyron (900k, purple barrier and dash), Titan Kurog (3.5M, giant, ground slam and charge), Emperor Zareth (40M, teleports behind you, homing orbs, beam) and Omega Draykon (900M, two power-up phases). Damage both ways scales with the Power Level gap, so a weak warrior can still win with good blocking and dodging. Every big attack has a telegraph: glowing fist, red ring, red aim line, warning text and sound.
+- **Six forms**: Super Saiyan 1 to 5. Each unlocks at a Power Level or by beating a boss. Climb them in order: power up while transformed, then press A (T) again. SSJ2 and up crackle with lightning.
+- **Eight attacks**: Ki Blast, Charged Blast, Kamehameha and Galick Gun (beams: hold the trigger to charge, release or push both hands forward to fire, aim to steer), Kaio-ken (red aura, damage and speed up, burns stamina), Energy Barrage, Giant Sphere and the SSJ5 Ultimate Beam. New attacks equip themselves into an empty slot; swap them in menu → Attacks.
+- **Blood and scars**: as anyone's health drops, cuts, bruises and blood streaks appear on their body (bosses, the sparring partner, your mirror reflection and your own forearms), hits spray blood and your view gets a pulsing red edge. Turn it off in Settings → Blood & scars.
+- **Slow motion**: unlocks at Speed level 5. Right thumbstick click (F, or the on-screen button) slows enemies and their attacks for 3–8 seconds while you move at full speed. Costs stamina, has a cooldown, longer and stronger with more Speed.
+- **Flying**: left thumbstick click (G, or the on-screen **Fly** button on desktop, or menu → Status → Fly). Move where you look; right stick up and down (R and V) rises and descends; touch the ground to land. Costs a trickle of ki. You can fly out over the mountains, and bosses follow you up.
+- **Sparring partner** (menu → Training): a humanoid fighter who punches, blocks, dodges and fires ki at Easy, Normal, Hard or Master (who goes Super Saiyan). Every stat grows; knock them down for a bonus.
+- **Gravity chamber**: 10x, 20x, 50x, 100x gravity unlock with Power Level or boss wins. More XP, heavier movement and a red sky; below the recommended Power Level it strains your stamina and health.
+- **Hyperbolic Time Chamber**: unlocks at Power Level 30,000 or by beating Titan Kurog. A white void with 3x XP, a day passes every 24 seconds with bonus XP at days 7, 30, 90, 180 and 365, and the sparring partner becomes your own shadow.
 
 The **mirror** to your left (a little house with a golden frame) shows your character copying your head and hand movement, including hair, aura and transformation.
 
@@ -76,6 +88,9 @@ Rokan is the one base model every player customises; there are no separate playe
 | Comfort & settings | Y | C |
 | Move | Left stick (smooth or teleport) | WASD |
 | Turn | Right stick (snap or smooth) | Mouse (click the canvas to lock it) |
+| Fly / land | Left stick click | G or the Fly button |
+| Rise / descend while flying | Right stick up / down | R / V |
+| Slow motion (Speed level 5) | Right stick click | F or the Slow-Mo button |
 | Menus | Point a controller and pull the trigger | Mouse |
 
 Overlaps are prevented: grips + trigger don't fire, both grips never count as a block, punching is ignored while blocking.
@@ -175,14 +190,16 @@ src/
   player/Player.js        health, ki and stamina, locomotion, punching, blasts, blocking
   player/Hands.js         first-person hands and forearms, velocity tracking, hand glow
   player/Comfort.js       movement vignette and fades
+  player/SpeedFocus.js    slow motion (Speed level 5+)
   character/              Rokan base model: options, procedural hair and anatomy, merged avatar rig
   combat/Combat.js        targets, swept punch and projectile collisions, projectiles
   progression/            stats and Power Level, all 6 forms, all 8 attacks
   transform/              the 5-stage transformation experience
-  training/               dummy, ki targets, speed orbs, defense bot, activity manager
-  boss/Raxor.js           boss catalogue (5 villains) and Raxor's AI
-  fx/                     aura shader, particles, lightning, shockwaves, cracks
-  world/                  mountain-plains arena (terrain, rocks, sky, ambient fx) and mirror
+  training/               dummy, ki targets, speed orbs, defense bot, sparring partner, gravity, activity manager
+  boss/bosses.js          the five bosses as data (stats, look, attacks, phases, lines)
+  boss/Boss.js            one boss fighter AI that becomes any of the five
+  fx/                     aura shader, particles, lightning, shockwaves, cracks, battle damage, damage overlay
+  world/                  mountain-plains arena, Hyperbolic Time Chamber and mirror
   ui/                     canvas panels, menus, HUD, banners, pointer handling
   audio/Audio.js          procedural WebAudio sound effects
   save/SaveSystem.js      localStorage save and settings
@@ -192,8 +209,7 @@ src/
 
 ## Roadmap
 
-- **Phase 1 (this build)**: everything above.
-- **Phase 2**: Gravity Chamber (the gravity multiplier is already wired into XP and stamina), Super Saiyan 2 and 3, Kamehameha and more attacks, Lord Veyron and Titan Kurog, more customization.
-- **Phase 3**: Super Saiyan 4 and 5, Hyperbolic Time Chamber, 100x gravity, ultimate attacks, Emperor Zareth and Omega Draykon.
+- **Phases 1–3**: everything above is playable.
+- **Next**: replace the procedural characters with modeled, rigged anime characters (see `docs/`), headset tuning.
 
-All six forms, all eight attacks and all five bosses are already defined in data (`src/progression/forms.js`, `src/progression/attacks.js`, `src/boss/Raxor.js`) and shown as locked in the menus.
+Forms, attacks and bosses are data (`src/progression/forms.js`, `src/progression/attacks.js`, `src/boss/bosses.js`).

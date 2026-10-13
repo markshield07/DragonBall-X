@@ -34,6 +34,8 @@
                 <li><b>Left grip</b>: block</li>
                 <li><b>X</b>: training menu, <b>Y</b>: comfort options</li>
                 <li><b>Left stick</b>: move, <b>Right stick</b>: turn</li>
+                <li><b>Left stick click</b>: fly / land (while flying, right stick up/down rises and descends)</li>
+                <li><b>Right stick click</b>: slow motion (unlocks at Speed level 5)</li>
               </ul>
             </div>
             <div>
@@ -46,6 +48,8 @@
                 <li><b>T</b>: transform / power down</li>
                 <li><b>E</b>: cycle attack, <b>Q</b> (hold): block</li>
                 <li><b>WASD</b>: move, <b>Tab</b> or <b>M</b>: menu</li>
+                <li><b>G</b> or the <b>Fly</b> button: fly / land; <b>R</b> rise, <b>V</b> descend</li>
+                <li><b>F</b> or the <b>Slow-Mo</b> button: slow motion (unlocks at Speed level 5)</li>
               </ul>
             </div>
           </div>
@@ -57,6 +61,10 @@
     <div id="crosshair" class="hidden"></div>
     <div id="desktop-hint" class="hidden">Click to lock the mouse · Tab for menu</div>
     <button id="btn-enter-vr-corner" class="hidden">Enter VR</button>
+    <div id="action-buttons" class="hidden">
+      <button id="btn-fly" title="Take off or land (G)">FLY <kbd>G</kbd></button>
+      <button id="btn-slowmo" title="Slow down time for enemies (F)">SLOW-MO <kbd>F</kbd></button>
+    </div>
     <div id="fade"></div>
 
     <script type="module" src="./src/main.js"></script>

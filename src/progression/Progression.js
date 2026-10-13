@@ -1,7 +1,7 @@
 import { bus } from '../core/events.js';
 import { clamp } from '../core/math.js';
 import { FORMS, FORM_ORDER } from './forms.js';
-import { ATTACKS } from './attacks.js';
+import { ATTACKS, ATTACK_ORDER } from './attacks.js';
 
 export const STAT_KEYS = ['strength', 'speed', 'ki', 'stamina'];
 export const STAT_LABELS = { strength: 'Strength', speed: 'Speed', ki: 'Ki', stamina: 'Stamina' };
@@ -19,7 +19,24 @@ export const xpToNext = (level) => 40 + 15 * level;
 // SSJ1 unlocks at 5,000 which is ~10 combined level-ups (~5-10 minutes of mixed training).
 export const basePowerLevelFor = (levelSum) => Math.round(1000 * Math.pow(1.18, levelSum - 4));
 
-export const POWER_MILESTONES = [2000, 3000, 5000, 7500, 10000, 15000, 25000];
+export const POWER_MILESTONES = [2000, 3000, 5000, 7500, 10000, 15000, 25000, 50000, 100000];
+
+// Gravity chamber levels. Each unlocks at a base Power Level or a boss
+// victory. `recommended`: below this base Power Level the gravity strains
+// you (stamina drains, then health; you collapse instead of finishing).
+export const GRAVITY_LEVELS = [
+  { g: 1, name: 'Normal' },
+  { g: 10, name: 'Difficult', powerLevel: 8000, boss: 'raxor', recommended: 5000 },
+  { g: 20, name: 'Advanced', powerLevel: 20000, boss: 'veyron', recommended: 12000 },
+  { g: 50, name: 'Extreme', powerLevel: 50000, boss: 'kurog', recommended: 30000 },
+  { g: 100, name: 'Legendary', powerLevel: 120000, boss: 'zareth', recommended: 70000 },
+];
+export const TIME_CHAMBER_UNLOCK = { powerLevel: 30000, boss: 'kurog', label: 'Defeat Titan Kurog or reach Power Level 30,000' };
+// Simulated time inside the chamber: every real second is one hour inside,
+// so a day passes in 24 seconds and a full year in about two and a half hours.
+export const TIME_CHAMBER_HOURS_PER_SECOND = 1;
+export const TIME_CHAMBER_XP = 3; // XP multiplier inside
+export const TIME_CHAMBER_MILESTONES = [7, 30, 90, 180, 365]; // days inside
 
 export function defaultProgress() {
   return {
@@ -38,6 +55,9 @@ export function defaultProgress() {
     bossAttempts: {},
     milestonesSeen: [],
     gravityUnlocked: [1],
+    timeChamber: { unlocked: false, seconds: 0, milestones: [] },
+    sparWins: {},
+    trainingPrefs: { difficulty: 'normal', gravity: 1, location: 'arena' },
     playTime: 0,
     totalPunches: 0,
     bestPowerLevel: 1000,
@@ -49,6 +69,10 @@ export function defaultProgress() {
 export class Progression {
   constructor(data) {
     this.data = Object.assign(defaultProgress(), data || {});
+    // Older saves: add fields introduced later.
+    const d = defaultProgress();
+    this.data.timeChamber = { ...d.timeChamber, ...(this.data.timeChamber || {}) };
+    this.data.trainingPrefs = { ...d.trainingPrefs, ...(this.data.trainingPrefs || {}) };
     this.recentXp = { strength: 0, speed: 0, ki: 0, stamina: 0 };
   }
 
@@ -100,13 +124,56 @@ export class Progression {
       if (plBefore < m && plAfter >= m) bus.emit('milestone', { kind: 'power', value: m });
     }
     if (plAfter > this.data.bestPowerLevel) this.data.bestPowerLevel = plAfter;
-    for (const id of FORM_ORDER) {
+    this.refreshUnlocks();
+  }
+
+  beat(bossId) { return this.data.bossesDefeated.includes(bossId); }
+
+  // A rule { powerLevel, boss, stat: [key, level], form } is met when ANY of
+  // its conditions is.
+  meets(rule) {
+    if (!rule) return true;
+    const pl = this.basePowerLevel();
+    if (rule.powerLevel && pl >= rule.powerLevel) return true;
+    if (rule.boss && this.beat(rule.boss)) return true;
+    if (rule.stat && this.level(rule.stat[0]) >= rule.stat[1]) return true;
+    if (rule.form && this.isFormUnlocked(rule.form)) return true;
+    return false;
+  }
+
+  // Grants every form, attack, gravity level and the Time Chamber whose
+  // conditions are now met. Called after level-ups and boss victories.
+  refreshUnlocks() {
+    const d = this.data;
+    // Forms are climbed in order, so unlocking one unlocks those before it.
+    let highest = -1;
+    FORM_ORDER.forEach((id, i) => {
       const f = FORMS[id];
-      if (!f.playable || !f.unlock || this.data.unlockedForms.includes(id)) continue;
-      if (f.unlock.type === 'powerLevel' && plAfter >= f.unlock.value) {
-        this.data.unlockedForms.push(id);
+      if (f.playable && (d.unlockedForms.includes(id) || this.meets(f.unlock))) highest = i;
+    });
+    for (let i = 1; i <= highest; i++) {
+      const id = FORM_ORDER[i];
+      if (!d.unlockedForms.includes(id)) {
+        d.unlockedForms.push(id);
         bus.emit('form:unlocked', { form: id });
       }
+    }
+    for (const id of ATTACK_ORDER) {
+      const a = ATTACKS[id];
+      if (!a.implemented || d.unlockedAttacks.includes(id) || !a.unlock || !this.meets(a.unlock)) continue;
+      d.unlockedAttacks.push(id);
+      const empty = d.equipped.indexOf(null);
+      if (empty >= 0) d.equipped[empty] = id;
+      bus.emit('attack:unlocked', { attack: a, equipped: empty >= 0 });
+    }
+    for (const lv of GRAVITY_LEVELS) {
+      if (lv.g === 1 || d.gravityUnlocked.includes(lv.g) || !this.meets(lv)) continue;
+      d.gravityUnlocked.push(lv.g);
+      bus.emit('gravity:unlocked', { gravity: lv.g });
+    }
+    if (!d.timeChamber.unlocked && this.meets(TIME_CHAMBER_UNLOCK)) {
+      d.timeChamber.unlocked = true;
+      bus.emit('timechamber:unlocked', {});
     }
   }
 
@@ -154,26 +221,38 @@ export class Progression {
 
   attack(id) { return ATTACKS[id]; }
 
-  // Phase 1 "next goal" summary shown in menus/HUD.
+  // The "next goal" shown in menus and the HUD: the next transformation,
+  // then the next undefeated boss, then mastery.
   nextGoal(bossCatalog) {
     const pl = this.basePowerLevel();
-    if (!this.isFormUnlocked('ssj1')) {
-      const target = FORMS.ssj1.unlock.value;
+    const fmt = (n) => n.toLocaleString('en-US');
+    const next = FORM_ORDER.map((id) => FORMS[id]).find((f) => f.unlock && !this.isFormUnlocked(f.id));
+    const lastForm = [...this.data.unlockedForms].sort((a, b) => FORM_ORDER.indexOf(b) - FORM_ORDER.indexOf(a))[0];
+    if (lastForm !== 'base' && !this.data.transformCount[lastForm]) {
+      return { title: `Transform: ${FORMS[lastForm].name}!`, detail: 'Hold both grips (Space) to power up, then press A (T). Repeat to climb forms.', progress: 1 };
+    }
+    if (next) {
+      const prev = FORM_ORDER[FORM_ORDER.indexOf(next.id) - 1];
+      const from = FORMS[prev]?.unlock?.powerLevel || 1000;
+      const boss = next.unlock.boss ? bossCatalog?.find((b) => b.id === next.unlock.boss) : null;
       return {
-        title: 'Unlock SUPER SAIYAN',
-        detail: `Power Level ${pl.toLocaleString('en-US')} / ${target.toLocaleString('en-US')}`,
-        progress: clamp((pl - 1000) / (target - 1000), 0, 1),
+        title: `Unlock ${next.name.toUpperCase()}`,
+        detail: `Power Level ${fmt(pl)} / ${fmt(next.unlock.powerLevel)}${boss ? `  ·  or defeat ${boss.name}` : ''}`,
+        progress: clamp((pl - from) / (next.unlock.powerLevel - from), 0, 1),
       };
     }
-    if (!this.data.transformCount.ssj1) {
-      return { title: 'Transform for the first time!', detail: 'Hold both grips (Space) to power up, then press A (T)', progress: 1 };
-    }
-    const boss = bossCatalog?.find((b) => !this.data.bossesDefeated.includes(b.id) && b.available);
+    const boss = bossCatalog?.find((b) => !this.beat(b.id));
     if (boss) {
-      return { title: `Defeat ${boss.name}`, detail: `Enemy Power Level ${boss.powerLevel.toLocaleString('en-US')}`, progress: clamp(this.powerLevel('ssj1') / boss.powerLevel / 4, 0, 1) };
+      const best = this.powerLevel(lastForm);
+      return { title: `Defeat ${boss.name}`, detail: `Enemy Power Level ${fmt(boss.powerLevel)}`, progress: clamp(Math.log10(best) / Math.log10(boss.powerLevel), 0, 1) };
     }
-    const m = this.mastery('ssj1');
-    return { title: 'Master Super Saiyan', detail: `Mastery level ${m.level} / 10`, progress: m.level / 10 };
+    const m = this.mastery(lastForm);
+    return { title: `Master ${FORMS[lastForm].name}`, detail: `Mastery level ${m.level} / 10`, progress: m.level / 10 };
+  }
+
+  // Highest unlocked form id.
+  topForm() {
+    return [...this.data.unlockedForms].sort((a, b) => FORM_ORDER.indexOf(b) - FORM_ORDER.indexOf(a))[0];
   }
 
   toJSON() { return this.data; }
