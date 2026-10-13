@@ -145,7 +145,8 @@ export class HUD {
     } else {
       const atk = p.equippedAttack();
       text(`Attack: ${atk.name}`, 28, 320, 28, COLORS.blue);
-      text(`${key(game, 'switchAttack')}: switch`, W - 28, 320, 24, COLORS.muted, 'right');
+      const pd = p.form !== 'base' && tr.state !== 'poweringDown';
+      text(pd ? `${key(game, 'transform')}: power down` : `${key(game, 'switchAttack')}: switch`, W - 28, 320, 24, pd ? COLORS.gold : COLORS.muted, 'right');
     }
 
     // Boss bar or next goal

@@ -874,6 +874,7 @@ export class Game {
     this.actionBar = document.getElementById('action-buttons');
     this.btnFly = document.getElementById('btn-fly');
     this.btnSlow = document.getElementById('btn-slowmo');
+    this.btnPowerDown = document.getElementById('btn-powerdown');
     const press = (key) => (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -882,6 +883,12 @@ export class Game {
     };
     this.btnFly?.addEventListener('click', press('fly'));
     this.btnSlow?.addEventListener('click', press('slowmo'));
+    this.btnPowerDown?.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.transformation.powerDown();
+      this.desktopInput.requestLock();
+    });
     this.actionTimer = 0;
   }
 
@@ -904,6 +911,8 @@ export class Game {
     this.btnSlow.innerHTML = label;
     this.btnSlow.classList.toggle('on', sf.active > 0);
     this.btnSlow.classList.toggle('locked', !sf.unlocked || (sf.cooldown > 0 && !(sf.active > 0)));
+    const tr = this.transformation;
+    this.btnPowerDown?.classList.toggle('hidden', this.player.form === 'base' || tr.state === 'transforming' || tr.state === 'poweringDown');
   }
 
   updatePreview(dt) {

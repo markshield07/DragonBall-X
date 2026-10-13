@@ -91,7 +91,7 @@ export class Transformation {
     }
 
     // ---- Sustained form
-    if (p.form !== 'base' && this.state !== 'transforming') {
+    if (p.form !== 'base' && this.state !== 'transforming' && this.state !== 'poweringDown') {
       const drain = this.progress.formKiDrain(p.form);
       p.ki -= drain * dt * (this.state === 'charging' ? 0 : 1);
       this.sustainTime += dt;
@@ -195,7 +195,9 @@ export class Transformation {
   }
 
   powerDown() {
-    if (this.player.form === 'base') return;
+    // Already on the way down: calling again restarted the timer every frame
+    // when ki hit zero, so you stayed stuck in the form with no way out.
+    if (this.player.form === 'base' || this.state === 'poweringDown') return;
     if (this.state === 'charging') bus.emit('powerup:end', {});
     this.charge = 0;
     this.prompted = false;
