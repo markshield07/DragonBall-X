@@ -62,6 +62,7 @@ export class Sparring {
       },
       onPunch: (hit) => this.takeHit(hit),
       onBlast: (hit) => this.takeHit(hit),
+      blind: (sec) => { if (this.group.visible && this.state !== 'down' && !this.kd.grounded) { this.fistGlow.material.opacity = 0; this.enter('stunned', sec); } },
     };
     this.registered = false;
     this.shadow = false;

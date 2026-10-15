@@ -190,6 +190,28 @@ export class Combat {
   }
 
   addTarget(t) { this.targets.add(t); return () => this.targets.delete(t); }
+
+  // The active enemy closest to where you're aiming (within about 60°), or null.
+  nearestEnemy(origin, dir) {
+    let best = null, bestScore = Infinity;
+    for (const t of this.targets) {
+      if (t.team !== 'enemy' || (t.active && !t.active())) continue;
+      const to = _a.subVectors(t.sphere().center, origin);
+      const d = to.length();
+      if (d > 80 || to.dot(dir) < d * 0.5) continue;
+      const score = d * (2 - to.dot(dir) / Math.max(d, 1e-3));
+      if (score < bestScore) { bestScore = score; best = t; }
+    }
+    return best;
+  }
+
+  // Solar Flare: every enemy within 40 m that can see you is blinded.
+  blindEnemies(from, sec) {
+    for (const t of this.targets) {
+      if (t.team !== 'enemy' || (t.active && !t.active()) || !t.blind) continue;
+      if (t.sphere().center.distanceTo(from) < 40) t.blind(sec);
+    }
+  }
   removeTarget(t) { this.targets.delete(t); }
 
   // ---- Punches -------------------------------------------------------------
@@ -367,9 +389,23 @@ export class Combat {
 
   explode(p) {
     const energy = Explosions.energyOf(p);
-    this.fx.explosion(p.mesh.position, p.color, energy, p.vel);
+    // The Spirit Bomb always lands like a meteor: a round crater, never a gouge.
+    this.fx.explosion(p.mesh.position, p.color, energy, p.spiritBomb ? null : p.vel);
     this.fx.flash(p.mesh.position, p.color, p.radius * 4 + energy * 0.8, 0.18 + 0.06 * energy);
     if (p.kind === 'sphere') this.fx.ring(p.mesh.position.clone(), p.color, { maxRadius: 6 * p.radius + 2 + 2 * (p.over || 0), duration: 0.7 + 0.15 * (p.over || 0) });
+    // Spirit Bomb: a blinding dome of light, shockwaves rolling out across
+    // the land and a second blast as the dome collapses.
+    if (p.spiritBomb) {
+      const at = p.mesh.position.clone();
+      const ground = at.clone().setY(terrainHeight(at.x, at.z) + 0.1);
+      this.fx.flash(at, 0xffffff, 10 + energy * 3, 1.1);
+      this.fx.flash(at, p.color, 14 + energy * 4, 1.8);
+      this.fx.ring(ground.clone(), 0xffffff, { maxRadius: 25 + 3 * energy, duration: 1.4, opacity: 0.9 });
+      this.fx.ring(ground.clone(), p.color, { maxRadius: 40 + 4 * energy, duration: 2.2, opacity: 0.6 });
+      this.fx.ring(ground.clone(), 0xffe0a0, { maxRadius: 60 + 5 * energy, duration: 3.2, opacity: 0.35 });
+      setTimeout(() => this.fx.explosion(at, 0xffffff, energy * 0.55, null), 650);
+      bus.emit('fx:shake', { position: at, amount: 1.2 });
+    }
     // Overcharged spheres and discs: extra shockwaves too.
     if ((p.kind === 'sphere' || p.kind === 'disc') && p.over >= 1) {
       this.fx.ring(p.mesh.position.clone(), 0xffffff, { maxRadius: 4 + 3 * energy, duration: 1.0, opacity: 0.8 });

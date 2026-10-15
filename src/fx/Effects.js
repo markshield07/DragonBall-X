@@ -249,6 +249,14 @@ export class Effects {
     }
   }
 
+  // A particle flying from `from` into `to`, arriving after `time` seconds
+  // (energy pulled into a Spirit Bomb). Stops short by `stopAt` metres.
+  gather(from, to, color, size = 0.15, time = 1, stopAt = 0) {
+    const dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z;
+    const k = Math.max(0, 1 - stopAt / Math.max(1e-3, Math.hypot(dx, dy, dz))) / time;
+    this.particles.spawn({ x: from.x, y: from.y, z: from.z, vx: dx * k, vy: dy * k, vz: dz * k, size, life: time, color: this.colTmp.set(color), drag: 0 });
+  }
+
   stream(pos, color, { vy = 1.2, spread = 0.05, size = 0.04, life = 0.5 } = {}) {
     this.particles.spawn({
       x: pos.x + rand(-spread, spread), y: pos.y + rand(-spread, spread), z: pos.z + rand(-spread, spread),

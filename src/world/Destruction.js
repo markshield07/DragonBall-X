@@ -194,7 +194,9 @@ export class Destruction {
   // the platform (it's stone) or on the other planets.
   dig(pos, energy, R) {
     const g = this.game;
-    if (g.training?.realm || Math.hypot(pos.x, pos.z) < 12) return;
+    // The Spirit Bomb (energy 10+) digs even next to the platform: the stone
+    // platform survives on a column of earth in the middle (see terrain.js).
+    if (g.training?.realm || (Math.hypot(pos.x, pos.z) < 12 && energy < 10)) return;
     const h = terrainHeight(pos.x, pos.z);
     if (pos.y - h > R * 0.6) return;
     const s = 1.2;
@@ -202,6 +204,7 @@ export class Destruction {
       terrainHeight(pos.x, pos.z + s) - terrainHeight(pos.x, pos.z - s)) / (2 * s);
     let r, depth;
     if (energy >= 1.2 && slope > 0.35) { r = R * 1.25; depth = R * 0.6; }
+    else if (energy >= 10) { r = R * 0.8; depth = R * 0.32; } // Spirit Bomb: the biggest crater of all
     else if (energy >= 3.5) { r = R * 0.8; depth = R * 0.3; }
     else return;
     const old = addDent(pos.x, pos.z, r, depth);

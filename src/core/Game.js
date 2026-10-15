@@ -638,7 +638,8 @@ export class Game {
     });
     bus.on('ki:empty', () => bus.emit('hud:message', { text: `Not enough ki! Power up: ${key(this, 'powerUp').toLowerCase()}`, color: '#4cc3ff' }));
     bus.on('attack:selected', ({ attack }) => {
-      const how = { blast: 'tap to shoot, hold to charge', barrage: 'hold to fire, longer = stronger', buff: 'tap for x2, hold for x20', beam: 'hold to charge, let go to fire' }[attack.type] || 'hold to charge, let go to throw';
+      const how = attack.spiritBomb ? 'raise your hand and hold for 15 seconds, then throw'
+        : { blast: 'tap to shoot, hold to charge', barrage: 'hold to fire, longer = stronger', buff: 'tap for x2, hold for x20', beam: 'hold to charge, let go to fire', flare: 'tap to blind them, hold to blind them longer' }[attack.type] || 'hold to charge, let go to throw';
       bus.emit('hud:message', { text: `${attack.name}: ${how}`, color: '#4cc3ff' });
     });
     bus.on('player:hit', (h) => {

@@ -56,6 +56,7 @@ export class Boss {
       },
       onPunch: (hit) => this.takeHit(hit),
       onBlast: (hit) => this.takeHit(hit),
+      blind: (sec) => this.blind(sec),
     };
     this.aura = new Aura({ radius: 0.85, height: 2.8 });
     this.group.add(this.aura.group);
@@ -378,6 +379,14 @@ export class Boss {
     const next = this.def.phases[this.phase];
     if (next && this.health < this.def.maxHealth * next.at && this.health > 0 && !this.kd.active) this.powerUpPhase(next);
     if (this.health <= 0) this.defeat(hit);
+  }
+
+  // Solar Flare: can't see, stumbles around dazed (not during a knockdown).
+  blind(sec) {
+    if (!this.active || ['defeated', 'intro', 'vanish', 'knockdown'].includes(this.state) || this.kd.active) return;
+    this.endAttackVisuals();
+    this.enter('stunned', sec);
+    this.say(['ARGH! My eyes!', 'I can\'t see!', 'A cheap trick!'][Math.floor(Math.random() * 3)]);
   }
 
   addFlinch(dir, k) {

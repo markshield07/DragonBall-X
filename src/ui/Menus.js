@@ -319,17 +319,20 @@ export class GameMenu {
     const top = g.progress.powerLevel(g.progress.topForm());
     ui.text('Fight any boss you like. The stronger they are, the harder they hit!', a.x, y + 24, { size: 24, color: COLORS.muted, weight: 'normal' });
     y += 40;
+    // Rows shrink to fit every boss in the panel.
+    const rowH = Math.min(104, (a.y + a.h - y) / BOSSES.length);
+    const k = rowH / 104;
     for (const b of BOSSES) {
       const beaten = g.progress.beat(b.id);
       const attempts = g.progress.data.bossAttempts[b.id] || 0;
-      ui.text(`${b.name}`, a.x, y + 40, { size: 38, color: '#ff8a8a' });
-      ui.text(b.title, a.x, y + 74, { size: 24, color: COLORS.muted, weight: 'normal' });
-      ui.text(`PL ${formatNumber(b.powerLevel)}`, a.x + 520, y + 40, { size: 32, color: COLORS.text });
+      ui.text(`${b.name}`, a.x, y + 40 * k, { size: Math.round(38 * k), color: '#ff8a8a', maxWidth: 500 });
+      ui.text(b.title, a.x, y + 74 * k, { size: Math.round(24 * k), color: COLORS.muted, weight: 'normal' });
+      ui.text(`PL ${formatNumber(b.powerLevel)}`, a.x + 520, y + 40 * k, { size: Math.round(32 * k), color: COLORS.text });
       const ratio = Math.max(pl, top) / b.powerLevel;
       const verdict = ratio > 3 ? 'You overwhelm them' : ratio > 1 ? 'You are stronger' : ratio > 0.25 ? 'Tough fight' : ratio > 0.02 ? 'Very dangerous' : 'Nearly impossible';
-      ui.text(`${verdict}${beaten ? '  ·  DEFEATED ★' : ''}${attempts ? `  ·  ${attempts} tr${attempts > 1 ? 'ies' : 'y'}` : ''}`, a.x + 520, y + 74, { size: 24, color: ratio > 1 ? COLORS.green : ratio > 0.25 ? COLORS.orange : COLORS.red, weight: 'normal', maxWidth: a.w - 840 });
-      ui.button(`fight-${b.id}`, beaten ? 'Rematch' : 'Challenge!', a.x + a.w - 280, y + 12, 280, 76, { size: 34, color: '#a8241a', onClick: () => g.startBoss(b.id) });
-      y += 104;
+      ui.text(`${verdict}${beaten ? '  ·  DEFEATED ★' : ''}${attempts ? `  ·  ${attempts} tr${attempts > 1 ? 'ies' : 'y'}` : ''}`, a.x + 520, y + 74 * k, { size: Math.round(24 * k), color: ratio > 1 ? COLORS.green : ratio > 0.25 ? COLORS.orange : COLORS.red, weight: 'normal', maxWidth: a.w - 840 });
+      ui.button(`fight-${b.id}`, beaten ? 'Rematch' : 'Challenge!', a.x + a.w - 280, y + 12 * k, 280, 76 * k, { size: Math.round(34 * k), color: '#a8241a', onClick: () => g.startBoss(b.id) });
+      y += rowH;
     }
   }
 

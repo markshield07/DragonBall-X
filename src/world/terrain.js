@@ -121,14 +121,21 @@ export function addDent(x, z, r, depth) {
   dents.push({ x, z, r, r2: r * r, depth });
   return dents.length > MAX_DENTS ? dents.shift() : null;
 }
+// The stone training platform (r < 6.4 at the origin) never sinks: a crater
+// dug around it leaves it standing on a column of earth.
+const PLATFORM_R = 6.4;
 function dentDepth(x, z) {
+  const rp = x * x + z * z;
+  if (rp < PLATFORM_R * PLATFORM_R) return 0;
   let d = 0;
   for (const t of dents) {
     const dx = x - t.x, dz = z - t.z;
     const q = (dx * dx + dz * dz) / t.r2;
     if (q < 1) { const k = 1 - q; d += t.depth * k * k; }
   }
-  return d;
+  // A steep but not vertical wall just outside the platform edge.
+  const e = Math.sqrt(rp) - PLATFORM_R;
+  return e < 1.2 ? d * (e / 1.2) : d;
 }
 
 // Blast-churned earth: how dug-up the ground is here (0 to 1), for colour.

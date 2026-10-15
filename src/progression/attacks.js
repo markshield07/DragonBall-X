@@ -60,11 +60,15 @@ export const ATTACKS = {
     unlock: { stat: ['speed', 4], label: 'Speed level 4' },
     effects: 'Hold for a stream of exploding blasts. The longer you hold (up to 9 seconds), the faster and bigger they get.',
   },
+  // The Spirit Bomb (id kept from the Giant Energy Sphere so saves keep it
+  // equipped): the most powerful move in the game. It takes a full 15 seconds
+  // of gathering energy from the sky before it can be thrown (no ki-level
+  // speed-up), and keeps growing for 10 more. The ground shakes the whole time.
   giantSphere: {
-    id: 'giantSphere', name: 'Giant Energy Sphere', implemented: true, level: 3, type: 'sphere',
-    damage: 300, kiCost: 90, chargeTime: 3, cooldown: 12, speed: 6, radius: 1.1, color: 0x9fe8ff,
+    id: 'giantSphere', name: 'Spirit Bomb', implemented: true, level: 4, type: 'sphere', spiritBomb: true,
+    damage: 1800, kiCost: 80, chargeTime: 15, fixedCharge: true, overTime: 10, cooldown: 20, speed: 6, radius: 1.6, color: 0x9fe8ff,
     unlock: { stat: ['ki', 10], boss: 'kurog', label: 'Ki level 10 or defeat Titan Kurog' },
-    effects: 'Hold the trigger (raise your hand) to gather a huge sphere, let go to throw it. Keep holding (up to 9 seconds) to grow it even bigger.',
+    effects: 'The strongest move there is. Raise your hand and hold for 15 seconds while energy flies in from the sky, then throw it. Keep holding (up to 25 seconds) for an even bigger one. Leaves the biggest crater of all.',
   },
   ultimateBeam: {
     id: 'ultimateBeam', name: 'Ultimate Blue Energy Beam', implemented: true, level: 4, type: 'beam',
@@ -97,6 +101,30 @@ export const ATTACKS = {
     unlock: { stat: ['ki', 12], boss: 'zareth', label: 'Ki level 12 or defeat Emperor Zareth' },
     effects: 'A huge golden beam from both hands. Keep holding (up to 9 seconds) to make it even bigger.',
   },
+  masenko: {
+    id: 'masenko', name: 'Masenko', implemented: true, level: 2, type: 'beam',
+    damage: 90, kiCost: 30, chargeTime: 1.0, cooldown: 3.5, color: 0xffe14a, beamRadius: 0.24, duration: 1.0, boom: 3.5,
+    unlock: { stat: ['ki', 3], label: 'Ki level 3' },
+    effects: 'A quick golden beam fired from both hands held above your head. Weaker than Kamehameha but fast to charge. Keep holding (up to 9 seconds) to make it bigger.',
+  },
+  solarFlare: {
+    id: 'solarFlare', name: 'Solar Flare', implemented: true, level: 2, type: 'flare',
+    damage: 0, kiCost: 20, chargeTime: 0, cooldown: 10, color: 0xffffff,
+    unlock: { stat: ['speed', 6], boss: 'veyron', label: 'Speed level 6 or defeat Lord Veyron' },
+    effects: 'A blinding flash of light: your enemy can\'t see and stumbles around. Tap to blind them for 2 seconds; hold (up to 9 seconds) to blind them for up to 6.',
+  },
+  hellzoneGrenade: {
+    id: 'hellzoneGrenade', name: 'Hellzone Grenade', implemented: true, level: 3, type: 'grenade',
+    damage: 40, kiCost: 50, chargeTime: 2, cooldown: 6, speed: 13, radius: 0.15, color: 0x9cff5a, count: 10,
+    unlock: { stat: ['ki', 14], boss: 'zareth', label: 'Ki level 14 or defeat Emperor Zareth' },
+    effects: 'Throws a ring of ki blasts that circle around your enemy and then all slam into them at once. Keep holding (up to 9 seconds) for more blasts.',
+  },
+  triBeam: {
+    id: 'triBeam', name: 'Tri-Beam', implemented: true, level: 4, type: 'beam',
+    damage: 520, kiCost: 60, chargeTime: 2.5, cooldown: 9, color: 0xfff6c8, beamRadius: 0.42, duration: 1.4, boom: 7, healthCost: 15,
+    unlock: { stat: ['strength', 16], boss: 'nyxar', label: 'Strength level 16 or defeat Nyxar' },
+    effects: 'Make a triangle with your hands and fire a crushing beam. Very strong, but it costs some of your own health. Keep holding (up to 9 seconds) to make it bigger.',
+  },
 };
 
-export const ATTACK_ORDER = ['kiBlast', 'chargedBlast', 'kamehameha', 'galickGun', 'kaioken', 'barrage', 'destructoDisc', 'giantSphere', 'bigBang', 'specialBeamCannon', 'finalFlash', 'ultimateBeam'];
+export const ATTACK_ORDER = ['kiBlast', 'chargedBlast', 'masenko', 'kamehameha', 'galickGun', 'kaioken', 'barrage', 'solarFlare', 'destructoDisc', 'bigBang', 'specialBeamCannon', 'hellzoneGrenade', 'finalFlash', 'triBeam', 'ultimateBeam', 'giantSphere'];

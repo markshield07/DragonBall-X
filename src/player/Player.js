@@ -7,6 +7,7 @@ import { segmentSphere, makeDisc } from '../combat/Combat.js';
 import { terrainHeight } from '../world/Arena.js';
 import { WORLD_RADIUS } from '../world/terrain.js';
 import { glowMaterial } from '../render/toon.js';
+import { PowerUpFX } from '../fx/PowerUpFX.js';
 
 const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
@@ -419,6 +420,8 @@ export class Player {
     this.orbShown = false;
     this.discShown = false;
     this.kaiokenCharge = null;
+    const bombWas = this.bombLevel || 0;
+    this.bombLevel = 0;
     if (atk.type === 'beam') { this.updateBeam(dt, input, hands, atk, enabled); }
     else this.cancelBeamCharge();
     for (const side of ['left', 'right']) {
@@ -428,11 +431,19 @@ export class Player {
       const pressed = enabled && hs.trigger > 0.6 && hs.grip < 0.6;
       if (atk.type === 'barrage') this.updateBarrage(dt, side, st, hs, atk, pressed);
       else if (atk.type === 'buff') this.updateKaiokenCharge(dt, side, st, hands, atk, pressed);
+      else if (atk.type === 'flare') this.updateFlare(dt, side, st, hs, hands, atk, pressed);
       else if (atk.type !== 'beam') this.updateHeldShot(dt, side, st, hs, hands, atk, pressed);
       st.held = pressed;
     }
     if (!this.orbShown && !this.beam.charging) this.chargeOrb.visible = false;
     if (!this.discShown) this.chargeDisc.visible = false;
+    // Spirit Bomb: rocks float up around you while it gathers, and drop after.
+    if (this.bombLevel > 0 || this.bombFx) {
+      this.bombFx ||= new PowerUpFX(this.game.renderer.scene, this.game.effects);
+      _v.set(this.headWorld.x, terrainHeight(this.headWorld.x, this.headWorld.z), this.headWorld.z);
+      this.bombFx.update(dt, _v, this.bombLevel * this.game.visualIntensity);
+    }
+    if (bombWas > 0 && this.bombLevel === 0) this.game.audio.setLoop?.('spiritBomb', 0, 1);
   }
 
   // Basic / Charged Ki Blast, Big Bang, Giant Sphere and Destructo Disc: hold to
@@ -444,16 +455,22 @@ export class Player {
     if (pressed && (quick || st.cooldown <= 0 || st.time > 0)) {
       st.time += dt;
       const delay = quick ? QUICK_HOLD : 0;
-      const chargeTime = (quick ? QUICK_CHARGE_TIME : atk.chargeTime) / (1 + 0.06 * (this.progress.level('ki') - 1));
+      const chargeTime = (quick ? QUICK_CHARGE_TIME : atk.chargeTime) / (atk.fixedCharge ? 1 : 1 + 0.06 * (this.progress.level('ki') - 1));
       st.charge = clamp((st.time - delay) / chargeTime, 0, 1);
       this.growOver(dt, st, atk, delay + (quick ? QUICK_CHARGE_TIME : atk.chargeTime), [side]);
-      if (atk.type === 'sphere') this.showSphere(st, side, hands, atk);
+      if (atk.spiritBomb) this.showSpiritBomb(dt, st, side, hands, atk);
+      else if (atk.type === 'sphere') this.showSphere(st, side, hands, atk);
       else if (atk.type === 'disc') this.showDisc(st, side, hs, hands, atk);
       else if (!quick || st.charge > 0) this.chargeBlastHeld(dt, side, hs, hands, atk, st);
       if (st.charge > 0 && Math.random() < 0.1 + 0.1 * (st.over || 0)) this.game.haptic(side, Math.min(1, 0.15 + 0.3 * st.charge + 0.15 * (st.over || 0)), 20);
     } else if (st.held || st.time > 0) {
-      if (st.charge > 0.25 && st.cooldown <= 0) {
+      if (atk.spiritBomb && st.charge < 1) {
+        // Not ready: the gathered energy scatters back into the sky.
+        if (st.time > 0.3) bus.emit('hud:message', { text: `Not ready yet! The Spirit Bomb needs ${Math.ceil(atk.chargeTime - st.time)} more seconds.`, color: '#9fe8ff' });
+        this.game.audio.setLoop?.('spiritBomb', 0, 1);
+      } else if (st.charge > 0.25 && st.cooldown <= 0) {
         if (atk.type === 'sphere') this.fireSphere(side, hs, atk, st.charge, st.over || 0);
+        else if (atk.type === 'grenade') this.fireGrenade(side, hs, atk, st.charge, st.over || 0);
         else if (atk.type === 'disc') this.fireDisc(side, hs, atk, st.charge, st.over || 0);
         else this.fireBlast(side, hs, atk, st.charge, st.over || 0);
       }
@@ -461,6 +478,8 @@ export class Player {
       st.charge = 0;
       st.over = 0;
       st.stage = 0;
+      st.ready = false;
+      st.countdown = null;
     }
   }
 
@@ -470,7 +489,7 @@ export class Player {
   // `s` is a hand's fire state or the beam; `fullAt` is when it was fully charged.
   growOver(dt, s, atk, fullAt, sides, kiMul = 1) {
     if (s.charge < 1) return;
-    const T = Math.max(4, MAX_CHARGE_TIME - fullAt);
+    const T = atk.overTime || Math.max(4, MAX_CHARGE_TIME - fullAt);
     if ((s.over || 0) < OVERCHARGE_STAGES && this.ki > atk.kiCost + 1) {
       s.over = Math.min(OVERCHARGE_STAGES, (s.over || 0) + dt * OVERCHARGE_STAGES / T);
       this.ki = Math.max(0, this.ki - (OVERCHARGE_KI * kiMul / T) * dt);
@@ -534,6 +553,115 @@ export class Player {
       this.game.effects.stream(_w.copy(o.position).add(_v.set(Math.cos(a) * r * 2.5, Math.random() * r, Math.sin(a) * r * 2.5)), atk.color, { vy: -0.3, spread: 0.05, size: 0.05 + 0.03 * over, life: 0.3 });
     }
     if (over > 0 && Math.random() < 0.12 * over) this.game.effects.burst?.(o.position.clone(), 0xffffff, 3, 2 + over, 0.04, 0.25);
+  }
+
+  bombRadius(charge, over, atk) { return (0.12 + atk.radius * Math.pow(charge, 0.8)) * (1 + 0.25 * over); }
+
+  // Spirit Bomb: a huge sphere gathers high above your raised hand while
+  // energy streams in from the sky and the land all around, the ground
+  // shakes harder and harder, and rocks lift off the ground.
+  showSpiritBomb(dt, st, side, hands, atk) {
+    const g = this.game;
+    const over = st.over || 0;
+    const c = st.charge;
+    const r = this.bombRadius(c, over, atk);
+    const o = this.chargeOrb;
+    o.visible = true;
+    this.orbShown = true;
+    o.material.color.setHex(atk.color);
+    o.scale.setScalar(r * (1 + Math.sin(st.time * 9) * 0.03 + Math.sin(st.time * 31) * 0.015 * (1 + over)));
+    // High over your head, so it never blocks the view.
+    o.position.copy(hands.hands[side].worldPos).add(_v.set(0, 0.35 + r * 1.15, 0));
+    // Energy pulled in from the atmosphere: streaks fly in from far away in
+    // the sky and from the land around you, more as it grows.
+    const n = 2 + Math.round(3 * c + 1.5 * over);
+    for (let i = 0; i < n; i++) {
+      const fromSky = Math.random() < 0.65;
+      const a = Math.random() * Math.PI * 2;
+      const dist = fromSky ? 25 + Math.random() * 30 : 8 + Math.random() * 18;
+      _w.set(o.position.x + Math.cos(a) * dist, fromSky ? o.position.y + 6 + Math.random() * 30 : terrainHeight(o.position.x + Math.cos(a) * dist, o.position.z + Math.sin(a) * dist) + 0.3, o.position.z + Math.sin(a) * dist);
+      g.effects.gather(_w, o.position, Math.random() < 0.3 ? 0xffffff : atk.color, 0.35 + 0.4 * Math.random() + 0.1 * over, 0.9 + Math.random() * 0.6, r * 0.8);
+    }
+    if (Math.random() < 0.3 + 0.2 * c) g.effects.stream(_w.copy(o.position).add(_v.set((Math.random() - 0.5) * r * 2, (Math.random() - 0.5) * r * 2, (Math.random() - 0.5) * r * 2)), 0xffffff, { vy: 0, spread: 0.1, size: 0.1 + 0.1 * c, life: 0.3 });
+    // The ground shakes, harder as it grows; cracks and floating rocks.
+    st.quake = (st.quake || 0) - dt;
+    if (st.quake <= 0) {
+      st.quake = 0.22;
+      const feet = _v.set(this.headWorld.x, terrainHeight(this.headWorld.x, this.headWorld.z), this.headWorld.z);
+      bus.emit('fx:shake', { position: feet.clone(), amount: 0.03 + 0.09 * c + 0.04 * over });
+      if (Math.random() < 0.25 + 0.3 * c) g.effects.crack(feet.clone().add(_w.set((Math.random() - 0.5) * 6, 0, (Math.random() - 0.5) * 6)), 1 + 2 * c);
+      if (Math.random() < 0.5) g.effects.boom?.dust(feet.clone().add(_w.set((Math.random() - 0.5) * 8, 0, (Math.random() - 0.5) * 8)), 1 + c, 2);
+    }
+    this.bombLevel = 0.4 + 0.6 * c;
+    // Rising hum, stage messages counting down.
+    g.audio.setLoop?.('spiritBomb', 0.3 + 0.6 * c + 0.1 * over, 0.6 + 1.2 * c + 0.3 * over, { base: 48, noiseFreq: 700 });
+    const left = Math.ceil(atk.chargeTime - st.time);
+    if (c < 1 && left !== st.countdown) {
+      st.countdown = left;
+      if (left === Math.ceil(atk.chargeTime)) bus.emit('hud:message', { text: 'SPIRIT BOMB! Keep your hand up and hold!', color: '#9fe8ff' });
+      else if (left % 5 === 0 || left <= 3) bus.emit('hud:message', { text: `Gathering energy… ${left}`, color: '#9fe8ff' });
+    }
+    if (c >= 1 && !st.ready) { st.ready = true; bus.emit('hud:message', { text: 'SPIRIT BOMB READY! Throw it! (or keep holding to grow it)', color: '#ffd23a' }); g.haptic(side, 1, 300); }
+  }
+
+  // Hellzone Grenade: a ring of blasts fans out around the target, hangs
+  // there, then every one slams in at once.
+  fireGrenade(side, hs, atk, charge, over = 0) {
+    const cost = atk.kiCost * (0.5 + 0.5 * charge);
+    if (this.ki < cost) { bus.emit('ki:empty', {}); this.fire[side].cooldown = 0.4; return; }
+    this.ki -= cost;
+    const g = this.game;
+    const count = Math.round(atk.count * (0.6 + 0.4 * charge) + 3 * over);
+    const damage = atk.damage * this.progress.kiMult() * this.kiDamageMult() * (0.5 + 0.5 * charge) * (1 + 0.4 * over);
+    const origin = hs.aimOrigin.clone().addScaledVector(hs.aimDir, 0.3);
+    const target = g.combat.nearestEnemy(origin, hs.aimDir);
+    const center = target ? () => target.sphere().center : null;
+    const aimPt = origin.clone().addScaledVector(hs.aimDir, 12);
+    const side0 = _w.crossVectors(hs.aimDir, _v.set(0, 1, 0)).normalize().clone();
+    for (let i = 0; i < count; i++) {
+      const a = (i / count) * Math.PI * 2;
+      // Each flies out to a spot on a ring around the target, then homes in.
+      const ring = new THREE.Vector3().addScaledVector(side0, Math.cos(a) * 3.5).add(_v.set(0, Math.sin(a) * 2.5 + 1, 0));
+      const dir = (center ? center().clone() : aimPt.clone()).add(ring).sub(origin).normalize();
+      const shot = g.combat.fire({ origin: origin.clone(), dir, speed: atk.speed, radius: atk.radius * (1 + 0.3 * over), damage, color: atk.color, team: 'player', charged: true, kind: 'blast', life: 5 });
+      shot.energy = 1.1 + 0.3 * charge + 0.4 * over;
+      // Homing switches on after a short flight, so they spread out first.
+      if (center) {
+        const h = { target: null, strength: 3 };
+        shot.homing = h;
+        setTimeout(() => { h.target = () => center(); }, 450 + 25 * i);
+      }
+    }
+    if (over >= 2) bus.emit('hud:message', { text: 'HELLZONE GRENADE!', color: '#9cff5a' });
+    this.fire[side].cooldown = atk.cooldown;
+    bus.emit('blast:fired', { hand: side, charged: true, charge, power: 1 });
+  }
+
+  // Solar Flare: hold to build up light in your hands, let go to flash.
+  updateFlare(dt, side, st, hs, hands, atk, pressed) {
+    if (pressed && (st.cooldown <= 0 || st.time > 0)) {
+      st.time = Math.min(MAX_CHARGE_TIME, st.time + dt);
+      st.charge = st.time / MAX_CHARGE_TIME;
+      if (Math.random() < 0.6) this.game.effects.stream(hands.hands[side].worldPos, 0xffffff, { vy: 0.1, spread: 0.06 + 0.1 * st.charge, size: 0.04 + 0.06 * st.charge, life: 0.25 });
+      if (Math.random() < 0.15) this.game.haptic(side, 0.2 + 0.5 * st.charge, 20);
+    } else if (st.held || st.time > 0) {
+      if (st.cooldown <= 0) {
+        if (this.ki < atk.kiCost) bus.emit('ki:empty', {});
+        else {
+          this.ki -= atk.kiCost;
+          const blind = 2 + 4 * st.charge;
+          const g = this.game;
+          const at = hs.aimOrigin.clone().addScaledVector(hs.aimDir, 1.2);
+          g.effects.flash(at, 0xffffff, 6 + 10 * st.charge, 0.5);
+          g.effects.ring(at.clone(), 0xffffcc, { maxRadius: 10 + 10 * st.charge, duration: 0.7, vertical: true, normal: hs.aimDir.clone(), opacity: 0.6 });
+          g.combat.blindEnemies(this.headWorld, blind);
+          bus.emit('hud:message', { text: 'SOLAR FLARE!', color: '#ffffff' });
+          this.fire[side].cooldown = atk.cooldown;
+        }
+      }
+      st.time = 0;
+      st.charge = 0;
+    }
   }
 
   // Destructo Disc: a spinning razor disc above your raised hand.
@@ -635,9 +763,31 @@ export class Player {
     this.ki -= cost;
     const radius = (0.08 + atk.radius * charge) * (1 + 0.3 * over);
     const damage = atk.damage * this.progress.kiMult() * this.kiDamageMult() * (0.3 + 0.7 * charge) * (1 + 0.6 * over);
-    const shot = this.game.combat.fire({ origin: this.chargeOrb.position.clone(), dir: hs.aimDir, speed: atk.speed * (1 - 0.05 * over), radius, damage, color: atk.color, team: 'player', charged: true, kind: 'sphere', life: 6 + over });
-    if (over > 0) { shot.energy = 4 + 0.5 * over; shot.over = over; }
-    if (over >= 2) bus.emit('hud:message', { text: over >= OVERCHARGE_STAGES ? 'MAXIMUM GIANT SPHERE!' : 'HUGE GIANT SPHERE!', color: '#9fe8ff' });
+    const bomb = !!atk.spiritBomb;
+    let dir = hs.aimDir;
+    if (bomb) {
+      // Thrown from high above your head, it heads for the enemy you're
+      // facing, or else down to where you're aiming on the ground.
+      const from = this.chargeOrb.position;
+      const target = this.game.combat.nearestEnemy(hs.aimOrigin, hs.aimDir);
+      let at = target ? target.sphere().center.clone() : null;
+      if (!at) {
+        at = hs.aimOrigin.clone().addScaledVector(hs.aimDir, 30);
+        for (let t = 2; t <= 60; t += 1) { _w.copy(hs.aimOrigin).addScaledVector(hs.aimDir, t); if (_w.y < terrainHeight(_w.x, _w.z)) { at.copy(_w); break; } }
+      }
+      dir = at.sub(from).normalize();
+    }
+    const shot = this.game.combat.fire({ origin: this.chargeOrb.position.clone(), dir, speed: atk.speed * (1 - 0.05 * over), radius: bomb ? this.bombRadius(charge, over, atk) : radius, damage, color: atk.color, team: 'player', charged: true, kind: 'sphere', life: bomb ? 12 : 6 + over });
+    if (bomb) {
+      // The biggest explosion and crater in the game.
+      shot.spiritBomb = true;
+      shot.energy = 11 + 0.75 * over;
+      shot.over = over;
+      this.game.audio.setLoop?.('spiritBomb', 0, 1);
+      bus.emit('hud:message', { text: over >= OVERCHARGE_STAGES ? 'MAXIMUM SPIRIT BOMB!!' : 'SPIRIT BOMB!', color: '#9fe8ff' });
+      bus.emit('spiritbomb:thrown', { over });
+    } else if (over > 0) { shot.energy = 4 + 0.5 * over; shot.over = over; }
+    if (!bomb && over >= 2) bus.emit('hud:message', { text: over >= OVERCHARGE_STAGES ? 'MAXIMUM GIANT SPHERE!' : 'HUGE GIANT SPHERE!', color: '#9fe8ff' });
     this.fire[side].cooldown = atk.cooldown;
     bus.emit('blast:fired', { hand: side, charged: true, charge, power: 1 });
   }
@@ -738,6 +888,8 @@ export class Player {
     const cost = atk.kiCost * (0.5 + 0.5 * b.charge);
     if (this.ki < cost) { bus.emit('ki:empty', {}); b.cooldown = 0.5; return; }
     this.ki -= cost;
+    // Tri-Beam: costs some of your own health (never knocks you out).
+    if (atk.healthCost) this.health = Math.max(1, this.health - atk.healthCost);
     // Overcharged (held past full): longer, wider, stronger, and it blows up
     // far bigger where it lands.
     const over = b.over || 0;
