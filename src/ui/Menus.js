@@ -295,19 +295,25 @@ export class GameMenu {
       t.setDifficulty(id);
       if (g.state === 'training') g.startTraining('spar');
     });
-    row('Gravity', GRAVITY_LEVELS.map((l) => {
-      const open = p.data.gravityUnlocked.includes(l.g);
-      return { id: l.g, name: `${l.g}x`, selected: t.gravity === l.g, enabled: open, sub: open ? undefined : `Need PL ${formatNumber(l.powerLevel)}` };
-    }), (v) => t.setGravity(v));
     const tc = p.data.timeChamber.unlocked;
+    // Gravity training only happens in the Time Chamber.
+    if (t.inChamber) {
+      row('Gravity', GRAVITY_LEVELS.filter((l) => l.g >= 10).map((l) => {
+        const open = l.g === 10 || p.data.gravityUnlocked.includes(l.g);
+        return { id: l.g, name: `${l.g}x`, selected: t.gravity === l.g, enabled: open, sub: open ? `${l.xp}x XP` : `Need PL ${formatNumber(l.powerLevel)}` };
+      }), (v) => t.setGravity(v));
+    } else {
+      ui.text('Gravity training (10x to 100x) only works in the Time Chamber.', a.x, y + 24, { size: 24, color: COLORS.muted, weight: 'normal' });
+      y += 50;
+    }
     row('Location', [
-      { id: 'arena', name: 'Training Grounds', selected: t.location === 'arena' },
-      { id: 'timechamber', name: 'Time Chamber', selected: t.location === 'timechamber', enabled: tc, sub: tc ? `Day ${t.chamberDays()} · 3x XP` : `Need PL ${formatNumber(TIME_CHAMBER_UNLOCK.powerLevel)}` },
+      { id: 'arena', name: 'Training Grounds', selected: t.location === 'arena', sub: '1x XP' },
+      { id: 'timechamber', name: 'Time Chamber', selected: t.location === 'timechamber', enabled: tc, sub: tc ? `Day ${t.chamberDays()} · up to 10x XP` : `Need PL ${formatNumber(TIME_CHAMBER_UNLOCK.powerLevel)}` },
       { id: 'kali', name: "King Kali's", selected: t.location === 'kali', sub: '2x XP' },
       { id: 'zui', name: 'Planet Zui', selected: t.location === 'zui', sub: 'Crowd battle' },
     ], (id) => g.fadeTo(() => { t.setLocation(id); g.resetPlayerPosition(); }));
     const lv = GRAVITY_LEVELS.find((l) => l.g === t.gravity);
-    if (lv?.recommended && p.basePowerLevel() < lv.recommended) {
+    if (t.inChamber && lv?.recommended && p.basePowerLevel() < lv.recommended) {
       ui.text(`Warning: ${lv.g}x gravity strains you below Power Level ${formatNumber(lv.recommended)}.`, a.x, y + 30, { size: 24, color: COLORS.red, weight: 'normal' });
     }
   }
@@ -406,7 +412,7 @@ export class GameMenu {
     });
     let y = a.y + 56 + rows * 72 + 40;
     ui.text('YOUR GOAL', a.x, y, { size: 28, color: COLORS.gold });
-    y = ui.wrap('Train to raise your Power Level. Each training spot grows a different stat. At Power Level 5,000 you unlock Super Saiyan! Then beat the bosses to unlock stronger forms and attacks. The portal by the training grounds takes you to other planets.', a.x, y + 36, a.w, { size: 26, color: COLORS.text });
+    y = ui.wrap('Train to raise your Power Level. Each training spot grows a different stat. At Power Level 5,000 you unlock Super Saiyan and the Time Chamber! Training there is the fastest way to get stronger (up to 10x XP). King Kali\'s planet gives 2x. Then beat the bosses to unlock stronger forms and attacks. The portal by the training grounds takes you to other planets.', a.x, y + 36, a.w, { size: 26, color: COLORS.text });
   }
 
   drawSettings(ui, a) {
@@ -473,7 +479,7 @@ export class PortalMenu {
     ui.text('Where do you want to go?', ui.W / 2, 175, { size: 34, align: 'center', color: COLORS.muted });
     const w = (ui.W - 150) / 2;
     ui.button('portal-kali', "King Kali's Planet", 50, 220, w, 150, { size: 38, color: '#a8761a', onClick: () => g.travel('kali') });
-    ui.wrap('A tiny planet in the Other World. Heavy gravity: training here gives 2x XP.', 60, 410, w - 20, { size: 26 });
+    ui.wrap('A tiny planet in the Other World. Training here gives 2x XP.', 60, 410, w - 20, { size: 26 });
     ui.button('portal-zui', 'Planet Zui', 100 + w, 220, w, 150, { size: 38, color: '#6a2aa8', onClick: () => g.travel('zui') });
     ui.wrap('A battle planet. Crowds of warriors attack, most far weaker than you.', 110 + w, 410, w - 20, { size: 26 });
     ui.button('portal-stay', 'Stay here', ui.W / 2 - 180, ui.H - 120, 360, 90, { size: 34, onClick: () => g.closePortalMenu() });

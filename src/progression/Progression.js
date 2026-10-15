@@ -12,8 +12,11 @@ export const STAT_TRAINING = {
   stamina: 'Defensive Training',
 };
 
-// XP needed to go from `level` to `level + 1`.
-export const xpToNext = (level) => 40 + 15 * level;
+// XP needed to go from `level` to `level + 1`. LEVEL_EFFORT makes every
+// level (so every Super Saiyan form) take that many times more training;
+// the Time Chamber is the way to speed it up.
+export const LEVEL_EFFORT = 5;
+export const xpToNext = (level) => LEVEL_EFFORT * (40 + 15 * level);
 
 // Base Power Level grows ~18% per stat level gained. Starting (all level 1) = 1,000.
 // SSJ1 unlocks at 5,000 which is ~10 combined level-ups (~5-10 minutes of mixed training).
@@ -33,16 +36,20 @@ export const POWER_MILESTONES = [2000, 3000, 5000, 7500, 10000, 15000, 25000, 50
 // you (stamina drains, then health; you collapse instead of finishing).
 export const GRAVITY_LEVELS = [
   { g: 1, name: 'Normal' },
-  { g: 10, name: 'Difficult', powerLevel: 8000, boss: 'raxor', recommended: 5000 },
-  { g: 20, name: 'Advanced', powerLevel: 20000, boss: 'veyron', recommended: 12000 },
-  { g: 50, name: 'Extreme', powerLevel: 50000, boss: 'kurog', recommended: 30000 },
-  { g: 100, name: 'Legendary', powerLevel: 120000, boss: 'zareth', recommended: 70000 },
+  // Gravity training only works inside the Time Chamber, where 10x is the
+  // room's own gravity. xp: the XP multiplier at that gravity in there.
+  { g: 10, name: 'Difficult', powerLevel: 5000, boss: 'raxor', recommended: 5000, xp: 4 },
+  { g: 20, name: 'Advanced', powerLevel: 20000, boss: 'veyron', recommended: 12000, xp: 5 },
+  { g: 50, name: 'Extreme', powerLevel: 50000, boss: 'kurog', recommended: 30000, xp: 7 },
+  { g: 100, name: 'Legendary', powerLevel: 120000, boss: 'zareth', recommended: 70000, xp: 10 },
 ];
-export const TIME_CHAMBER_UNLOCK = { powerLevel: 30000, boss: 'kurog', label: 'Defeat Titan Kurog or reach Power Level 30,000' };
+// The Time Chamber opens together with Super Saiyan (or by beating Raxor):
+// it is the fast way to grind towards the higher forms.
+export const TIME_CHAMBER_UNLOCK = { powerLevel: 5000, boss: 'raxor', label: 'Defeat Raxor or reach Power Level 5,000' };
+export const KALI_XP = 2; // King Kali's planet; everywhere else outside the chamber is 1x
 // Simulated time inside the chamber: every real second is one hour inside,
 // so a day passes in 24 seconds and a full year in about two and a half hours.
 export const TIME_CHAMBER_HOURS_PER_SECOND = 1;
-export const TIME_CHAMBER_XP = 3; // XP multiplier inside
 export const TIME_CHAMBER_MILESTONES = [7, 30, 90, 180, 365]; // days inside
 
 export function defaultProgress() {

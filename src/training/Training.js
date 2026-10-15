@@ -12,7 +12,7 @@ import { KaliPlanet, ZuiPlanet } from '../world/Planets.js';
 import { setGroundOverride } from '../world/terrain.js';
 import { Horde } from './Horde.js';
 import {
-  GRAVITY_LEVELS, TIME_CHAMBER_HOURS_PER_SECOND, TIME_CHAMBER_XP, TIME_CHAMBER_MILESTONES, STAT_KEYS,
+  GRAVITY_LEVELS, TIME_CHAMBER_HOURS_PER_SECOND, KALI_XP, xpToNext, TIME_CHAMBER_MILESTONES, STAT_KEYS,
 } from '../progression/Progression.js';
 
 export const ACTIVITIES = [
@@ -315,16 +315,17 @@ export class Training {
   }
 
   get prefs() { return this.game.progress.data.trainingPrefs; }
-  // Gravity multiplier from the training settings (1 = normal).
-  get gravity() { return this.prefs.gravity || 1; }
+  // Gravity: only inside the Time Chamber (at least its own 10x); 1 elsewhere.
+  get gravity() { return this.inChamber ? Math.max(10, this.prefs.gravity || 1) : 1; }
   // Gravity felt right now: only while training.
   get activeGravity() { return this.enabled && this.game.state === 'training' ? this.gravity : 1; }
   get inChamber() { return this.location === 'timechamber'; }
   // The planet you're on (King Kali's or Zui), or null at home / in the chamber.
   get realm() { return this.location === 'kali' ? this.kali : this.location === 'zui' ? this.zui : null; }
+  // Training Grounds 1x, King Kali's 2x, Time Chamber 4x to 10x by gravity.
   get xpMult() {
-    const g = this.activeGravity;
-    return (g === 1 ? 1 : 1 + Math.log10(g) * 1.5) * (this.inChamber ? TIME_CHAMBER_XP : 1) * (this.location === 'kali' ? 2 : 1);
+    if (this.inChamber) return GRAVITY_LEVELS.find((l) => l.g === this.activeGravity)?.xp || 1;
+    return this.location === 'kali' ? KALI_XP : 1;
   }
 
   setEnabled(v) {
@@ -342,10 +343,10 @@ export class Training {
 
   // Gravity setting (only unlocked levels).
   setGravity(g) {
-    if (!this.game.progress.data.gravityUnlocked.includes(g)) return;
+    if (g > 10 && !this.game.progress.data.gravityUnlocked.includes(g)) return;
     this.prefs.gravity = g;
     const lv = GRAVITY_LEVELS.find((l) => l.g === g);
-    bus.emit('hud:message', { text: g === 1 ? 'Gravity back to normal' : `Gravity set to ${g}x (${lv.name}): +${Math.round((Math.log10(g) * 1.5) * 100)}% XP`, color: g === 1 ? '#aab3d6' : '#ff6a6a' });
+    bus.emit('hud:message', { text: `Gravity ${g}x (${lv.name}): ${lv.xp}x XP`, color: '#ff6a6a' });
     this.sign.dirty = true;
   }
 
@@ -380,7 +381,7 @@ export class Training {
     if (changed && this.activity === 'spar' && this.sparring.group.visible) this.sparring.setLevel(this.prefs.difficulty, this.inChamber);
     if (announce && changed) {
       bus.emit('hud:message', {
-        timechamber: { text: 'Hyperbolic Time Chamber: 3x XP. A day passes every 24 seconds.', color: '#ffffff', duration: 3.5 },
+        timechamber: { text: `Hyperbolic Time Chamber: ${this.gravity}x gravity, ${this.xpMult}x XP. A day passes every 24 seconds.`, color: '#ffffff', duration: 3.5 },
         kali: { text: 'King Kali\'s planet: 10x gravity, 2x XP', color: '#ffd36a', duration: 3.5 },
         zui: { text: 'Planet Zui: warriors are coming for you!', color: '#d08aff', duration: 3.5 },
       }[loc] || { text: 'Back on the training grounds', color: '#aab3d6' });
@@ -536,7 +537,7 @@ export class Training {
       y += 80;
     } else if (a.stat !== 'mastery') {
       const st = p.data.stats[a.stat];
-      const need = 40 + 15 * st.level;
+      const need = xpToNext(st.level);
       ui.text(`${a.stat.toUpperCase()} Lv ${st.level}`, 40, y + 20, { size: 34, color: COLORS.blue });
       ui.bar(300, y - 8, ui.W - 340, 38, st.xp / need, '#4cc3ff', { label: `${Math.floor(st.xp)} / ${need} XP` });
       y += 80;

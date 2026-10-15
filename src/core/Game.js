@@ -727,12 +727,12 @@ export class Game {
     });
     bus.on('gravity:unlocked', ({ gravity }) => {
       if (this.state === 'boss') this.unlockNews.push(`${gravity}x gravity training`);
-      this.banner.push({ title: `${gravity}x GRAVITY UNLOCKED`, subtitle: 'Set it in Menu > Training for bonus XP', color: '#ff6a6a', duration: 3 });
+      this.banner.push({ title: `${gravity}x GRAVITY UNLOCKED`, subtitle: 'Use it in the Time Chamber for more XP', color: '#ff6a6a', duration: 3 });
     });
     bus.on('timechamber:unlocked', () => {
       if (this.state === 'boss') this.unlockNews.push('the Hyperbolic Time Chamber');
       this.audio.fanfare();
-      this.banner.push({ title: 'TIME CHAMBER UNLOCKED', subtitle: 'Menu > Training > Location. 3x XP inside', color: '#ffffff', duration: 3.5, big: true });
+      this.banner.push({ title: 'TIME CHAMBER UNLOCKED', subtitle: 'Menu > Training > Location. Up to 10x XP inside!', color: '#ffffff', duration: 3.5, big: true });
     });
     bus.on('timechamber:milestone', ({ days, xp }) => {
       this.audio.fanfare();
