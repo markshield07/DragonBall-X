@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#0b0f2a" />
+    <title>Dragon Ball X</title>
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <div id="app"></div>
+
+    <!-- Landing screen: shown until the player picks VR or desktop. -->
+    <div id="landing">
+      <div class="landing-inner">
+        <h1 class="logo">DRAGON BALL <span>X</span></h1>
+        <p class="tagline">Train hard. Unlock your power. Become a Super Saiyan.</p>
+        <div class="landing-buttons">
+          <button id="btn-enter-vr" class="big-btn vr" disabled>Checking for VR…</button>
+          <button id="btn-desktop" class="big-btn">Play on Desktop</button>
+        </div>
+        <p id="vr-status" class="small"></p>
+        <details class="controls-help">
+          <summary>Controls</summary>
+          <div class="cols">
+            <div>
+              <h3>Meta Quest</h3>
+              <ul>
+                <li><b>Punch</b>: physically punch with either hand</li>
+                <li><b>Trigger</b>: fire the equipped attack (Ki Blast: tap or hold to auto-fire; Charged Blast: hold, then release)</li>
+                <li><b>Both grips</b>: power up (charges ki)</li>
+                <li><b>A</b>: transform / power down</li>
+                <li><b>B</b>: cycle equipped attack</li>
+                <li><b>Left grip</b>: block</li>
+                <li><b>X</b>: training menu, <b>Y</b>: comfort options</li>
+                <li><b>Left stick</b>: move, <b>Right stick</b>: turn</li>
+                <li><b>Left stick click</b>: fly / land (while flying, right stick up/down rises and descends)</li>
+                <li><b>Right stick click</b>: slow motion (unlocks at Speed level 5)</li>
+              </ul>
+            </div>
+            <div>
+              <h3>Keyboard &amp; mouse</h3>
+              <ul>
+                <li><b>Click canvas</b> to lock the mouse, <b>mouse</b> to look</li>
+                <li><b>Left click</b>: punch (alternating hands)</li>
+                <li><b>Right click</b>: fire the equipped attack (Charged Blast: hold, then release)</li>
+                <li><b>Space</b> (hold): power up (refills ki)</li>
+                <li><b>T</b>: transform / power down</li>
+                <li><b>E</b>: cycle attack, <b>Q</b> (hold): block</li>
+                <li><b>WASD</b>: move, <b>Tab</b> or <b>M</b>: menu</li>
+                <li><b>G</b> or the <b>Fly</b> button: fly / land; <b>R</b> rise, <b>V</b> descend</li>
+                <li><b>F</b> or the <b>Slow-Mo</b> button: slow motion (unlocks at Speed level 5)</li>
+              </ul>
+            </div>
+          </div>
+        </details>
+      </div>
+    </div>
+
+    <!-- Desktop-only overlay pieces -->
+    <div id="crosshair" class="hidden"></div>
+    <div id="desktop-hint" class="hidden">Click to lock the mouse · Tab for menu</div>
+    <button id="btn-enter-vr-corner" class="hidden">Enter VR</button>
+    <div id="action-buttons" class="hidden">
+      <button id="btn-fly" title="Take off or land (G)">FLY <kbd>G</kbd></button>
+      <button id="btn-slowmo" title="Slow down time for enemies (F)">SLOW-MO <kbd>F</kbd></button>
+      <button id="btn-view" title="See yourself from behind, or from your own eyes (P)">BEHIND VIEW <kbd>P</kbd></button>
+      <button id="btn-powerdown" class="hidden" title="Go back to your normal form (T)">POWER DOWN <kbd>T</kbd></button>
+    </div>
+    <div id="fade"></div>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
