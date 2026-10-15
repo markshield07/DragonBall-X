@@ -299,10 +299,10 @@ export class Boss {
   }
 
   powerRatio() { return this.game.currentPowerLevel() / this.def.powerLevel; }
-  // How hard the player's attacks land (0.55x when far weaker .. 1.6x when far stronger).
-  playerDamageScale() { return clamp(Math.pow(this.powerRatio(), 0.25), 0.55, 1.6); }
+  // How hard the player's attacks land (0.3x when far weaker .. 1.6x when far stronger).
+  playerDamageScale() { return clamp(Math.pow(this.powerRatio(), 0.25), 0.3, 1.6); }
   // How hard the boss's attacks land on the player.
-  bossDamageScale() { return clamp(Math.pow(1 / this.powerRatio(), 0.2), 0.45, 1.4) * this.def.damage; }
+  bossDamageScale() { return clamp(Math.pow(1 / this.powerRatio(), 0.2), 0.45, 2.5) * this.def.damage; }
 
   say(text, color = '#ff8a8a') { bus.emit('hud:message', { text: `${this.def.name}: ${text}`, color, duration: 3 }); }
 
@@ -592,7 +592,7 @@ export class Boss {
       }
       case 'volley': {
         if (this.timer <= 0) {
-          this.fireOrb(this.shotsLeft % 2 ? 'left' : 'right', 0.13, 8 * this.bossDamageScale(), 7.5 * fast);
+          this.fireOrb(this.shotsLeft % 2 ? 'left' : 'right', 0.18, 12 * this.bossDamageScale(), 8.5 * fast);
           this.shotsLeft -= 1;
           this.timer = 0.32 / fast;
           if (this.shotsLeft <= 0) {
