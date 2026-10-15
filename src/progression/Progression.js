@@ -49,8 +49,17 @@ export const TIME_CHAMBER_UNLOCK = { powerLevel: 5000, boss: 'raxor', label: 'De
 export const KALI_XP = 2; // King Kali's planet; everywhere else outside the chamber is 1x
 // Simulated time inside the chamber: every real second is one hour inside,
 // so a day passes in 24 seconds and a full year in about two and a half hours.
-export const TIME_CHAMBER_HOURS_PER_SECOND = 1;
-export const TIME_CHAMBER_MILESTONES = [7, 30, 90, 180, 365]; // days inside
+// Like in DBZ you can only stay one year per visit, then you must rest
+// outside before going back in. Time inside runs at 12 hours per real
+// second, so a day passes every 2 s and a year takes about 12 minutes.
+export const TIME_CHAMBER_HOURS_PER_SECOND = 12;
+export const TIME_CHAMBER_YEAR = 365; // days per visit
+export const TIME_CHAMBER_REST_MIN = 5; // real minutes of rest after a full year
+// Days into a visit that give bonus XP to every stat (every visit).
+export const TIME_CHAMBER_MILESTONES = [{ day: 30, xp: 300 }, { day: 90, xp: 600 }, { day: 180, xp: 1000 }, { day: 365, xp: 2000 }];
+// Daily bonus for coming back: XP to every stat, growing with the streak.
+export const DAILY_XP = 250;
+export const DAILY_STREAK_MAX = 7;
 
 export function defaultProgress() {
   return {
@@ -69,7 +78,8 @@ export function defaultProgress() {
     bossAttempts: {},
     milestonesSeen: [],
     gravityUnlocked: [1],
-    timeChamber: { unlocked: false, seconds: 0, milestones: [] },
+    timeChamber: { unlocked: false, seconds: 0, milestones: [], visit: 0, restUntil: 0 },
+    daily: { last: '', streak: 0 },
     sparWins: {},
     trainingPrefs: { difficulty: 'normal', gravity: 1, location: 'arena' },
     playTime: 0,
@@ -87,6 +97,9 @@ export class Progression {
     const d = defaultProgress();
     this.data.timeChamber = { ...d.timeChamber, ...(this.data.timeChamber || {}) };
     this.data.trainingPrefs = { ...d.trainingPrefs, ...(this.data.trainingPrefs || {}) };
+    this.data.daily = { ...d.daily, ...(this.data.daily || {}) };
+    // Chamber milestones used to be once-ever days; now they repeat each visit.
+    if (this.data.timeChamber.milestones.includes(7)) this.data.timeChamber.milestones = [];
     this.recentXp = { strength: 0, speed: 0, ki: 0, stamina: 0 };
   }
 
@@ -189,6 +202,22 @@ export class Progression {
       d.timeChamber.unlocked = true;
       bus.emit('timechamber:unlocked', {});
     }
+  }
+
+  // Daily bonus: once per calendar day. Coming back the next day grows the
+  // streak (up to DAILY_STREAK_MAX); missing a day starts it over.
+  // Returns { streak, xp } when granted, else null.
+  claimDaily(now = new Date()) {
+    const dk = (t) => `${t.getFullYear()}-${t.getMonth() + 1}-${t.getDate()}`;
+    const today = dk(now);
+    const dd = this.data.daily;
+    if (dd.last === today) return null;
+    const yesterday = dk(new Date(now.getTime() - 864e5));
+    dd.streak = dd.last === yesterday ? Math.min(DAILY_STREAK_MAX, dd.streak + 1) : 1;
+    dd.last = today;
+    const xp = DAILY_XP * dd.streak;
+    for (const k of STAT_KEYS) this.addXp(k, xp, 'daily');
+    return { streak: dd.streak, xp };
   }
 
   isFormUnlocked(id) { return this.data.unlockedForms.includes(id); }

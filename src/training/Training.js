@@ -12,7 +12,7 @@ import { KaliPlanet, ZuiPlanet } from '../world/Planets.js';
 import { setGroundOverride } from '../world/terrain.js';
 import { Horde } from './Horde.js';
 import {
-  GRAVITY_LEVELS, TIME_CHAMBER_HOURS_PER_SECOND, KALI_XP, xpToNext, TIME_CHAMBER_MILESTONES, STAT_KEYS,
+  GRAVITY_LEVELS, TIME_CHAMBER_HOURS_PER_SECOND, KALI_XP, xpToNext, TIME_CHAMBER_MILESTONES, TIME_CHAMBER_YEAR, TIME_CHAMBER_REST_MIN, STAT_KEYS,
 } from '../progression/Progression.js';
 
 export const ACTIVITIES = [
@@ -361,6 +361,10 @@ export class Training {
   // 'arena' (training grounds) or 'timechamber'. remember = store as preference.
   setLocation(loc, announce = true, remember = true) {
     if (loc === 'timechamber' && !this.game.progress.data.timeChamber.unlocked) loc = 'arena';
+    if (loc === 'timechamber' && this.restMinutes() > 0) {
+      if (announce) bus.emit('hud:message', { text: `You're worn out from a year in the Time Chamber. Rest ${this.restMinutes()} more minute${this.restMinutes() === 1 ? '' : 's'} first!`, color: '#ffb066', duration: 3.5 });
+      loc = 'arena';
+    }
     if (!['arena', 'timechamber', 'kali', 'zui'].includes(loc)) loc = 'arena';
     if (remember) this.prefs.location = loc;
     const changed = loc !== this.location;
@@ -500,27 +504,44 @@ export class Training {
     }
   }
 
-  // Simulated days inside the Time Chamber, with milestone rewards.
+  // Simulated days inside the Time Chamber. Each visit lasts one year at
+  // most (leaving early pauses it); milestone days give bonus XP, and after
+  // the full year you are sent out to rest.
   updateChamber(dt) {
     if (!this.inChamber) return;
     const g = this.game;
     const tc = g.progress.data.timeChamber;
-    const before = Math.floor(tc.seconds * TIME_CHAMBER_HOURS_PER_SECOND / 24);
+    const before = this.chamberDays();
     tc.seconds += dt;
-    const days = Math.floor(tc.seconds * TIME_CHAMBER_HOURS_PER_SECOND / 24);
+    tc.visit += dt;
+    const days = this.chamberDays();
     if (days !== before) this.sign.dirty = true;
+    this.chamber.setYear(days / TIME_CHAMBER_YEAR);
     for (const m of TIME_CHAMBER_MILESTONES) {
-      if (days >= m && !tc.milestones.includes(m)) {
-        tc.milestones.push(m);
-        const xp = 15 + m * 0.6;
-        for (const k of STAT_KEYS) g.progress.addXp(k, xp, 'time-chamber');
-        bus.emit('timechamber:milestone', { days: m, xp });
+      if (days >= m.day && !tc.milestones.includes(m.day)) {
+        tc.milestones.push(m.day);
+        for (const k of STAT_KEYS) g.progress.addXp(k, m.xp, 'time-chamber');
+        bus.emit('timechamber:milestone', { days: m.day, xp: m.xp });
       }
+    }
+    if (days >= TIME_CHAMBER_YEAR && !this.yearOver) {
+      this.yearOver = true;
+      tc.visit = 0;
+      tc.milestones = [];
+      tc.restUntil = Date.now() + TIME_CHAMBER_REST_MIN * 60e3;
+      bus.emit('timechamber:yearover', { rest: TIME_CHAMBER_REST_MIN });
+      g.fadeTo(() => { this.yearOver = false; this.setLocation('arena', false); g.resetPlayerPosition(); });
     }
   }
 
+  // Days into the current visit.
   chamberDays() {
-    return Math.floor(this.game.progress.data.timeChamber.seconds * TIME_CHAMBER_HOURS_PER_SECOND / 24);
+    return Math.min(TIME_CHAMBER_YEAR, Math.floor(this.game.progress.data.timeChamber.visit * TIME_CHAMBER_HOURS_PER_SECOND / 24));
+  }
+
+  // Whole minutes of rest left before the chamber opens again (0 = ready).
+  restMinutes() {
+    return Math.max(0, Math.ceil((this.game.progress.data.timeChamber.restUntil - Date.now()) / 60e3));
   }
 
   drawSign(ui) {
@@ -554,7 +575,7 @@ export class Training {
     else ui.text(`Session: +${Math.round(this.sessionXp)} XP`, 40, y, { size: 32, color: COLORS.green });
     const extras = [];
     if (this.gravity > 1) extras.push(`Gravity ${this.gravity}x`);
-    if (this.inChamber) extras.push(`Time Chamber · Day ${this.chamberDays()}`);
+    if (this.inChamber) extras.push(`Time Chamber · Day ${this.chamberDays()} of ${TIME_CHAMBER_YEAR}`);
     if (this.xpMult > 1.01) extras.push(`XP x${this.xpMult.toFixed(1)}`);
     if (extras.length) ui.text(extras.join('  ·  '), 40, y + 44, { size: 28, color: this.gravity > 1 ? COLORS.red : COLORS.gold });
   }

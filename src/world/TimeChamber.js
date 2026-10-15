@@ -4,7 +4,8 @@ import { bus } from '../core/events.js';
 
 // The Hyperbolic Time Chamber (Room of Spirit and Time), as in Dragon Ball Z:
 // a square of white tiles in front of the living quarters (a white building
-// with two tall pointed towers and a giant hourglass), and past the edge of
+// with two tall pointed towers and a giant hourglass counting down your
+// one-year stay), and past the edge of
 // the tiles nothing but endless white. The air swings between scorching heat
 // and freezing cold. Swapped in for the training grounds (the arena is
 // hidden), so it costs only a handful of draw calls.
@@ -136,8 +137,8 @@ export class TimeChamber {
     this.group.add(q);
   }
 
-  // The giant hourglass beside the doorway. Its sand runs out once every
-  // chamber day (24 s), then it turns over.
+  // The giant hourglass beside the doorway: its sand runs out over the one
+  // year you may stay.
   buildHourglass() {
     const gold = toon(0xd9b25a);
     const hg = new THREE.Group();
@@ -215,6 +216,9 @@ export class TimeChamber {
     }
   }
 
+  // How much of this visit's year has passed (0..1); the hourglass shows it.
+  setYear(f) { this.year = Math.min(1, Math.max(0, f)); }
+
   update(dt) {
     if (!this.group.visible) return;
     this.time += dt;
@@ -256,8 +260,8 @@ export class TimeChamber {
       this.weather.geometry.attributes.position.needsUpdate = true;
     }
 
-    // Hourglass: one chamber day (24 s) per turn.
-    const day = (this.time % 24) / 24;
+    // Hourglass: the sand runs out over your year in here.
+    const day = this.year || 0;
     this.sandTop.scale.setScalar(Math.max(0.05, Math.pow(1 - day, 0.5)));
     this.sandTop.position.y = 3.3 + 0.8 * this.sandTop.scale.y;
     this.sandBottom.scale.setScalar(Math.max(0.05, Math.pow(day, 0.5)));

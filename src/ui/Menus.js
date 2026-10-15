@@ -308,7 +308,7 @@ export class GameMenu {
     }
     row('Location', [
       { id: 'arena', name: 'Training Grounds', selected: t.location === 'arena', sub: '1x XP' },
-      { id: 'timechamber', name: 'Time Chamber', selected: t.location === 'timechamber', enabled: tc, sub: tc ? `Day ${t.chamberDays()} · up to 10x XP` : `Need PL ${formatNumber(TIME_CHAMBER_UNLOCK.powerLevel)}` },
+      { id: 'timechamber', name: 'Time Chamber', selected: t.location === 'timechamber', enabled: tc && t.restMinutes() === 0, sub: tc ? (t.restMinutes() > 0 ? `Resting: ${t.restMinutes()} min` : `Day ${t.chamberDays()}/365 · up to 10x XP`) : `Need PL ${formatNumber(TIME_CHAMBER_UNLOCK.powerLevel)}` },
       { id: 'kali', name: "King Kali's", selected: t.location === 'kali', sub: '2x XP' },
       { id: 'zui', name: 'Planet Zui', selected: t.location === 'zui', sub: 'Crowd battle' },
     ], (id) => g.fadeTo(() => { t.setLocation(id); g.resetPlayerPosition(); }));

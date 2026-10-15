@@ -35,7 +35,7 @@ export const BOSSES = [
       lose: 'This… isn\'t… over…',
       loseStrong: 'I… lost… to a Super Saiyan…',
     },
-    rewards: { xp: 40 },
+    rewards: { xp: 600 },
   },
   {
     id: 'veyron', name: 'Lord Veyron', title: 'Commander of Purple Ki', phase: 2,
@@ -53,7 +53,7 @@ export const BOSSES = [
       lose: 'My empire… will remember this…',
       loseStrong: 'Defeated… by a Saiyan…',
     },
-    rewards: { xp: 70 },
+    rewards: { xp: 1200 },
   },
   {
     id: 'kurog', name: 'Titan Kurog', title: 'Colossal Warrior', phase: 2,
@@ -71,7 +71,7 @@ export const BOSSES = [
       lose: 'Kurog… falls…',
       loseStrong: 'Small one… is giant inside…',
     },
-    rewards: { xp: 100 },
+    rewards: { xp: 2200 },
   },
   {
     id: 'zareth', name: 'Emperor Zareth', title: 'Cosmic Teleporter', phase: 3,
@@ -89,7 +89,7 @@ export const BOSSES = [
       lose: 'An emperor… does not… fall…',
       loseStrong: 'So this is a true Saiyan…',
     },
-    rewards: { xp: 140 },
+    rewards: { xp: 3800 },
   },
   {
     id: 'draykon', name: 'Omega Draykon', title: 'The Ultimate Enemy', phase: 3,
@@ -110,7 +110,7 @@ export const BOSSES = [
       lose: 'Omega… is… ended…',
       loseStrong: 'You are… the legend…',
     },
-    rewards: { xp: 200 },
+    rewards: { xp: 6000 },
   },
   {
     id: 'nyxar', name: 'Nyxar the Void King', title: 'Ruler of the Dark Dimension', phase: 4,
@@ -131,7 +131,7 @@ export const BOSSES = [
       lose: 'The void… is… breaking…',
       loseStrong: 'A light… the void cannot hold…',
     },
-    rewards: { xp: 260 },
+    rewards: { xp: 9000 },
   },
   {
     id: 'gorvax', name: 'Gorvax the Planet Eater', title: 'Devourer of Worlds', phase: 4,
@@ -152,7 +152,7 @@ export const BOSSES = [
       lose: 'Gorvax… full… of defeat…',
       loseStrong: 'Gorvax… bit off… too much…',
     },
-    rewards: { xp: 330 },
+    rewards: { xp: 13000 },
   },
   {
     id: 'azrath', name: 'Azrath the Endless', title: 'The God Beyond Omega', phase: 5,
@@ -174,7 +174,7 @@ export const BOSSES = [
       lose: 'Even the endless… end…',
       loseStrong: 'You are… the new god…',
     },
-    rewards: { xp: 420 },
+    rewards: { xp: 18000 },
   },
 ];
 

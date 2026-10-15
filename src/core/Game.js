@@ -157,6 +157,17 @@ export class Game {
     this.xrInput.pulse(side, intensity, ms);
   }
 
+  // Once per play session, the daily bonus for coming back.
+  claimDailyBonus() {
+    if (this.dailyChecked) return;
+    this.dailyChecked = true;
+    const got = this.progress.claimDaily();
+    if (!got) return;
+    this.audio.fanfare();
+    this.banner.push({ title: 'DAILY BONUS!', subtitle: `${got.streak > 1 ? `${got.streak} days in a row! ` : ''}+${formatNumber(got.xp)} XP to every stat. Come back tomorrow for more`, color: '#5cff8a', duration: 4, big: true, priority: true });
+    this.save();
+  }
+
   fadeTo(cb) {
     this.comfort.fadeTo(cb);
   }
@@ -461,6 +472,7 @@ export class Game {
 
   startTraining(activity = 'punch') {
     const wasBoss = this.state === 'boss' || this.state === 'result';
+    this.claimDailyBonus();
     this.boss.stop();
     this.hideAllMenus();
     this.menuOpen = false;
@@ -519,7 +531,7 @@ export class Game {
     const lines = [];
     if (win) {
       lines.push(`You defeated ${def.name} at Power Level ${formatNumber(this.progress.powerLevel(this.lastFightForm || 'base'))}.`);
-      lines.push(`Rewards: +${def.rewards.xp} XP to every stat.`);
+      lines.push(`Rewards: +${formatNumber(this.lastRewardXp ?? def.rewards.xp)} XP to every stat${this.lastRewardXp < def.rewards.xp ? ' (rematch: half XP)' : ''}.`);
       for (const n of this.unlockNews.slice(0, 3)) lines.push(`NEW: ${n}`);
       const next = BOSSES.find((b) => !this.progress.beat(b.id));
       if (next) lines.push(`Next challenge: ${next.name} (Power Level ${formatNumber(next.powerLevel)}).`);
@@ -678,7 +690,9 @@ export class Game {
       const d = this.progress.data;
       const first = !d.bossesDefeated.includes(def.id);
       if (first) d.bossesDefeated.push(def.id);
-      for (const k of ['strength', 'speed', 'ki', 'stamina']) this.progress.addXp(k, def.rewards.xp, 'boss-reward');
+      // Big XP for a win: the full amount the first time, half for a rematch.
+      this.lastRewardXp = first ? def.rewards.xp : Math.round(def.rewards.xp / 2);
+      for (const k of ['strength', 'speed', 'ki', 'stamina']) this.progress.addXp(k, this.lastRewardXp, 'boss-reward');
       this.progress.refreshUnlocks();
       this.audio.fanfare();
       this.banner.push({ title: `${def.name.toUpperCase()} DEFEATED!`, subtitle: first ? 'First victory! New rewards unlocked' : 'Victory!', color: '#ffcc33', duration: 3.2, big: true, priority: true });
@@ -736,7 +750,10 @@ export class Game {
     });
     bus.on('timechamber:milestone', ({ days, xp }) => {
       this.audio.fanfare();
-      this.banner.push({ title: `DAY ${days} IN THE TIME CHAMBER`, subtitle: `+${Math.round(xp)} XP to every stat`, color: '#ffffff', duration: 3 });
+      this.banner.push({ title: days >= 365 ? 'ONE FULL YEAR IN THE TIME CHAMBER!' : `DAY ${days} IN THE TIME CHAMBER`, subtitle: `+${Math.round(xp)} XP to every stat`, color: '#ffffff', duration: 3 });
+    });
+    bus.on('timechamber:yearover', ({ rest }) => {
+      this.banner.push({ title: 'YOUR YEAR IS UP!', subtitle: `You can only stay one year. Rest ${rest} minutes, then go back in`, color: '#ffb066', duration: 4.5, big: true });
     });
     bus.on('slowmo:unlocked', () => {
       this.audio.fanfare();
