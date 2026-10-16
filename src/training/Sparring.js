@@ -116,7 +116,10 @@ export class Sparring {
       // Your shadow: your own warrior in dark colors.
       ch = { ...this.game.character, skin: 9, hairColor: 0, eyeColor: 6, armorColor: 1, suitColor: 2, gloveColor: 2, bootColor: 1, beltColor: 0 };
     } else {
-      const t = CHARACTER_TEMPLATES.find((x) => x.id === this.level.template) || CHARACTER_TEMPLATES[0];
+      // Never spar a copy of yourself: swap in another warrior.
+      const SWAP = { zyra: 'zeron', kaizen: 'toren', vexar: 'kaizen', toren: 'rokan' };
+      const id = this.level.template === this.game.character.templateId ? SWAP[this.level.template] : this.level.template;
+      const t = CHARACTER_TEMPLATES.find((x) => x.id === id) || CHARACTER_TEMPLATES[0];
       ch = { ...defaultCharacter(), ...t.appearance, templateId: t.id };
     }
     this.avatar = createAvatar(ch);

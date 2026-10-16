@@ -86,9 +86,15 @@ export class UIManager {
           panel.setHover(hit.uv);
           hoveredAny.add(panel);
           g.renderer.canvas.style.cursor = panel.hoverId ? 'pointer' : 'default';
-          if (this.mouseClick && panel.click(hit.uv)) g.audio.ui();
-        } else g.renderer.canvas.style.cursor = 'default';
-      }
+          if (this.mouseClick) {
+            if (panel.click(hit.uv)) g.audio.ui();
+            else g.story?.onFreeClick();
+          }
+        } else {
+          g.renderer.canvas.style.cursor = 'default';
+          if (this.mouseClick) g.story?.onFreeClick();
+        }
+      } else if (this.mouseClick) g.story?.onFreeClick();
     }
     for (const p of this.panels) if (!hoveredAny.has(p) && p.hoverId) p.setHover(null);
     this.mouseClick = false;

@@ -177,6 +177,8 @@ export class DesktopInput {
     const rise = (this.pressed('KeyR') ? 1 : 0) - (this.pressed('KeyV') ? 1 : 0);
     R.stick.set(0, gameplay ? -rise : 0);
     s.escape = this.down('Escape');
+    // Story scenes: Enter / Space go on to the next line.
+    s.advance = this.down('Enter') || this.down('NumpadEnter') || this.down('Space');
 
     this.keysDown.clear();
     this.mouse.leftDown = this.mouse.rightDown = false;

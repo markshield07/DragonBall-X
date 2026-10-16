@@ -18,7 +18,7 @@ const _w = new THREE.Vector3();
 // stuns) with its own look and strength, rolled each time it (re)spawns:
 // most are far weaker than you, now and then an elite comes close to your
 // Power Level. A knockout puts them down for good; another takes their place.
-class ZuiFighter extends Sparring {
+export class ZuiFighter extends Sparring {
   constructor(game, horde, idx) {
     super(game);
     this.horde = horde;

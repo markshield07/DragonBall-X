@@ -10,8 +10,11 @@ const _v = new THREE.Vector3();
 // fur for SSJ4, blue for SSJ5, ...). Rendered off-screen only when the
 // character or form changes, then copied into a 2D canvas the HUD draws.
 export class Portrait {
-  constructor(game) {
+  // character / form: draw this character instead of your own (story NPCs).
+  constructor(game, { character = null, form = null } = {}) {
     this.game = game;
+    this.fixedCharacter = character;
+    this.fixedForm = form;
     this.scene = new THREE.Scene();
     this.scene.add(new THREE.HemisphereLight(0xeef6ff, 0x5a5048, 1.1));
     const key = new THREE.DirectionalLight(0xfff0dc, 1.6);
@@ -36,12 +39,13 @@ export class Portrait {
   // Re-renders if the look changed. Returns the canvas once there is a picture.
   update() {
     const g = this.game;
-    const ck = JSON.stringify(g.character);
-    const form = g.player?.form || 'base';
+    const character = this.fixedCharacter || g.character;
+    const ck = JSON.stringify(character);
+    const form = this.fixedForm || g.player?.form || 'base';
     if (ck !== this.charKey) {
       this.charKey = ck;
       if (this.avatar) { this.scene.remove(this.avatar.root); this.avatar.dispose(); }
-      this.avatar = createAvatar(g.character);
+      this.avatar = createAvatar(character);
       this.scene.add(this.avatar.root);
       this.formKey = '';
     }
