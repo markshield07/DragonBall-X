@@ -37,6 +37,7 @@ import { HUD } from '../ui/HUD.js';
 import { Banner } from '../ui/Banner.js';
 import { UIManager } from '../ui/UIManager.js';
 import { MainMenu, CharacterCreator, GameMenu, ResultScreen, PortalMenu } from '../ui/Menus.js';
+import { StoryManager } from '../story/StoryManager.js';
 
 const _v = new THREE.Vector3();
 const _q = new THREE.Quaternion();
@@ -107,6 +108,8 @@ export class Game {
       this.renderer.scene.add(m.panel.mesh);
       this.ui.add(m.panel);
     }
+    // The story campaign (Story Mode). Free training works without it.
+    this.story = new StoryManager(this);
     this.previewAvatar = null;
     this.previewForm = 'base';
     this.xrFrameRate = null;
@@ -130,7 +133,7 @@ export class Game {
   get preset() { return this.effectivePreset || GRAPHICS_PRESETS[this.settings.graphics]; }
   get visualIntensity() { return VISUAL_INTENSITY[this.settings.visualIntensity] ?? 0.8; }
   get particleBudget() { return this.effects.particles.budget; }
-  get gameplayActive() { return (this.state === 'training' || this.state === 'boss') && !this.menuOpen; }
+  get gameplayActive() { return (this.state === 'training' || this.state === 'boss') && !this.menuOpen && !this.story?.modal; }
 
   currentPowerLevel() {
     const charge = this.transformation?.charge || 0;
@@ -145,6 +148,13 @@ export class Game {
     const p = new Progression(s.progress);
     const ss = p.isFormUnlocked('ssj1') ? ' · Super Saiyan' : '';
     return `${s.character.name} · PL ${formatNumber(p.basePowerLevel())}${ss}`;
+  }
+
+  // Main menu: where the saved story is up to.
+  storySummary() {
+    const s = SaveSystem.load();
+    if (!s) return 'Start the adventure!';
+    return this.story.summary(new Progression(s.progress).data.story);
   }
 
   save() {
@@ -259,6 +269,7 @@ export class Game {
   }
 
   updatePointerMode() {
+    // Menus and story scenes free the cursor (click anywhere to go on).
     const needsCursor = !this.gameplayActive;
     this.desktopInput.setPointerMode(needsCursor);
     if (!this.isXR) {
@@ -320,6 +331,7 @@ export class Game {
   // ---- State transitions ------------------------------------------------------------
   toMainMenu() {
     this.save();
+    this.story?.onMainMenu();
     this.boss.stop();
     this.speedFocus.reset();
     this.combat.clearProjectiles();
@@ -338,7 +350,8 @@ export class Game {
     this.updatePointerMode();
   }
 
-  newGame() {
+  newGame(story = false) {
+    this.pendingStory = story;
     SaveSystem.wipe();
     this.character = defaultCharacter();
     this.progress = new Progression();
@@ -353,10 +366,23 @@ export class Game {
       this.progress = new Progression(save.progress);
     }
     this.applyCharacter();
+    this.progress.data.story.paused = true; // Free Training: the story waits
     this.startTraining('punch');
     this.banner.push({ title: `Welcome back, ${this.character.name}!`, subtitle: `Power Level ${formatNumber(this.progress.basePowerLevel())}`, duration: 2.5 });
     // Older saves: grant anything new content now unlocks at their level.
     this.progress.refreshUnlocks();
+  }
+
+  // Story Mode from the main menu: load the save and go on with the story,
+  // or make a warrior first and start the Prologue.
+  startStory() {
+    const save = SaveSystem.load();
+    if (!save) return this.newGame(true);
+    this.character = migrateCharacter(save.character);
+    this.progress = new Progression(save.progress);
+    this.applyCharacter();
+    this.progress.refreshUnlocks();
+    this.story.play();
   }
 
   // Change your warrior's look after creating them (from the main menu or
@@ -463,6 +489,11 @@ export class Game {
     this.applyCharacter();
     this.state = 'training';
     SaveSystem.save({ character: this.character, progress: this.progress.toJSON() });
+    if (this.pendingStory) {
+      this.pendingStory = false;
+      this.story.play();
+      return;
+    }
     this.startTraining('punch');
     this.banner.push({ title: `Welcome, ${this.character.name}!`, subtitle: 'Train to unlock SUPER SAIYAN', duration: 3 });
     this.banner.push({ title: 'Punch the dummy!', subtitle: this.isXR ? 'Swing your fists for real' : 'Left click to punch', duration: 3 });
@@ -470,7 +501,10 @@ export class Game {
     this.banner.push({ title: 'Need help?', subtitle: `${key(this, 'menu')} opens the menu. Help shows every button.`, duration: 3.5 });
   }
 
-  startTraining(activity = 'punch') {
+  // opts.story: the story manager is driving (keeps the story running).
+  // opts.place: called once the fade is dark and you're back at the start.
+  startTraining(activity = 'punch', opts = {}) {
+    if (!opts.story && this.story?.running) this.story.pause(false);
     const wasBoss = this.state === 'boss' || this.state === 'result';
     this.claimDailyBonus();
     this.boss.stop();
@@ -486,16 +520,20 @@ export class Game {
       this.transformation.forceBase();
     }
     if (!this.player.alive) this.player.resetResources();
-    this.fadeTo(() => { this.resetPlayerPosition(); this.renderer.warmUp(); });
+    this.fadeTo(() => { this.resetPlayerPosition(); this.renderer.warmUp(); opts.place?.(); });
     this.hud.setMode(this.isXR, true);
     this.updatePointerMode();
     this.save();
   }
 
   // Any boss can be challenged at any Power Level.
-  startBoss(id = this.currentBossId) {
-    const def = bossById(id) || BOSSES[0];
-    this.currentBossId = def.id;
+  // opts.story: a story fight's scaled boss (see StoryManager.bossIntro). It
+  // doesn't count as a menu win, an attempt or give boss rewards.
+  startBoss(id = this.currentBossId, opts = {}) {
+    const story = opts.story || null;
+    if (!story) this.story?.onExternalBoss();
+    const def = story ? { ...(bossById(id) || BOSSES[0]), ...story } : bossById(id) || BOSSES[0];
+    if (!story) this.currentBossId = def.id;
     this.hideAllMenus();
     this.menuOpen = false;
     this.training.setEnabled(false);
@@ -506,9 +544,11 @@ export class Game {
     this.transformation.forceBase();
     this.player.resetResources();
     this.player.ki = this.progress.maxKi();
-    const a = this.progress.data.bossAttempts;
-    a[def.id] = (a[def.id] || 0) + 1;
-    this.boss.setBoss(def.id);
+    if (!story) {
+      const a = this.progress.data.bossAttempts;
+      a[def.id] = (a[def.id] || 0) + 1;
+    }
+    this.boss.setBoss(def.id, story);
     this.fadeTo(() => {
       this.resetPlayerPosition();
       this.boss.start(def.id);
@@ -516,11 +556,13 @@ export class Game {
     });
     this.hud.setMode(this.isXR, true);
     this.banner.clear(); // drop any leftover training tips
-    this.banner.push({ title: 'BOSS BATTLE', subtitle: `${def.name} · Power Level ${formatNumber(def.powerLevel)}`, color: '#ff6a6a', duration: 2.6, big: true });
+    this.banner.push({ title: story ? 'STORY BATTLE' : 'BOSS BATTLE', subtitle: `${def.name} · Power Level ${formatNumber(def.powerLevel)}`, color: '#ff6a6a', duration: 2.6, big: true });
     this.updatePointerMode();
   }
 
   showResult(win) {
+    // A story fight goes straight back into the story.
+    if (this.boss.story && this.story.onBossResult(win)) return;
     this.state = 'result';
     this.menuOpen = false;
     this.gameMenu.panel.hide();
@@ -569,6 +611,7 @@ export class Game {
   // Walking through the gate: pick a planet (or stay).
   openPortalMenu() {
     if (this.menuOpen) return;
+    if (this.story?.onPortal()) return;
     this.menuOpen = true;
     this.portalMenu.panel.dirty = true;
     this.portalMenu.panel.show();
@@ -686,6 +729,16 @@ export class Game {
     });
     bus.on('boss:defeated', ({ id }) => {
       this.lastFightForm = this.player.form;
+      if (this.boss.story) {
+        // Story fights: no menu win or boss rewards (the episode gives its own).
+        this.audio.fanfare();
+        this.banner.push({ title: `${this.boss.def.name.toUpperCase()} IS DOWN!`, color: '#ffcc33', duration: 2.6, big: true, priority: true });
+        this.haptic('left', 1, 300);
+        this.haptic('right', 1, 300);
+        this.resultTimer = 2.8;
+        this.resultWin = true;
+        return;
+      }
       const def = bossById(id) || this.boss.def;
       const d = this.progress.data;
       const first = !d.bossesDefeated.includes(def.id);
@@ -838,8 +891,8 @@ export class Game {
     const handsVisible = xr || this.gameplayActive;
     if (!handsVisible) this.hands.setVisible(false);
 
-    // Menu buttons (X / Tab, Y / C)
-    if (this.state === 'training' || this.state === 'boss') {
+    // Menu buttons (X / Tab, Y / C); not while a story scene is talking.
+    if ((this.state === 'training' || this.state === 'boss') && !this.story.modal) {
       if (input.hands.left.primaryDown) { if (this.menuOpen) this.closeGameMenu(); else this.openGameMenu('status'); }
       if (input.hands.left.secondaryDown) { if (this.menuOpen && this.gameMenu.tab === 'settings') this.closeGameMenu(); else this.openGameMenu('settings'); }
     }
@@ -874,6 +927,7 @@ export class Game {
       this.boss.update(dt * ets);
     }
     this.training.update(dt, dt * ets);
+    this.story.update(dt, input, dt * ets);
     this.destruction.update(dt * ets);
     const fighting = this.state === 'training' || this.state === 'boss';
     const hpFrac = this.player.health / this.progress.maxHealth();

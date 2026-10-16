@@ -87,7 +87,7 @@ export class HUD {
       g.font = `${weight} ${size}px "Trebuchet MS", sans-serif`;
       g.textAlign = align;
       g.fillStyle = color;
-      g.fillText(s, x, y);
+      g.fillText(s, x, y, W - 56);
     };
     const bar = (x, y, w, h, frac, color, label) => {
       roundRect(g, x, y, w, h, h / 2);
@@ -159,8 +159,9 @@ export class HUD {
       g.fillStyle = 'rgba(255,255,255,0.7)';
       for (const p2 of b.def.phases) g.fillRect(28 + 712 * p2.at - 2, 380, 4, 38);
     } else {
-      const goal = prog.nextGoal(BOSSES);
-      text(`NEXT: ${goal.title}`, 28, 370, 28, COLORS.gold);
+      // Story Mode: the story objective; otherwise the next training goal.
+      const goal = game.story?.hudGoal() || prog.nextGoal(BOSSES);
+      text(goal.title.startsWith('STORY') ? goal.title : `NEXT: ${goal.title}`, 28, 370, 28, COLORS.gold);
       bar(28, 384, 712, 22, goal.progress, '#ff8a1a');
       text(goal.detail, 28, 440, 24, COLORS.muted);
     }

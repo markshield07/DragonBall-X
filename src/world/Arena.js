@@ -40,6 +40,7 @@ export class Arena {
     this.tint = 0; // 0..1, darkens the sky during transformations
     this.slow = 0; // 0..1, cool blue tint during slow motion
     this.gravity = 0; // 0..1, red gravity-chamber tint
+    this.mood = 0; // 0..1, story: an angry red sky (an invasion)
     this.rand = mulberry32(1987);
 
     this.buildSky();
@@ -708,9 +709,10 @@ export class Arena {
     // blue, the gravity chamber glows red.
     const slow = this.slow * 0.8;
     const grav = this.gravity * (0.42 + 0.05 * Math.sin(this.time * 3));
-    const t = Math.max(this.tint, slow, grav);
+    const mood = this.mood * 0.9;
+    const t = Math.max(this.tint, slow, grav, mood);
     this.skyUniforms.tint.value = t;
-    this.skyUniforms.tintColor.value.setHex(t === this.tint ? 0x3a2a10 : t === slow ? 0x1a3a8a : 0x8a1010);
+    this.skyUniforms.tintColor.value.setHex(t === this.tint ? 0x3a2a10 : t === slow ? 0x1a3a8a : t === mood ? 0x8a1a10 : 0x8a1010);
     const k = 1 - t * 0.35;
     this.hemi.intensity = 0.95 * k;
     this.sun.intensity = 1.45 * k;

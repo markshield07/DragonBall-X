@@ -12,6 +12,7 @@ import {
 } from '../character/options.js';
 import { formatNumber } from '../core/math.js';
 import { CONTROLS, HELP_ORDER } from './controls.js';
+import { drawStory } from './StoryPanel.js';
 
 const STAT_ACTIVITY = { strength: 'punch', ki: 'ki', speed: 'speed', stamina: 'defense' };
 const cycle = (arr, cur, dir) => (cur + dir + arr.length) % arr.length;
@@ -41,21 +42,21 @@ export class MainMenu {
       ui.button('confirmNo', 'Cancel', x, y + 200, bw, 100, { onClick: () => { this.confirmNew = false; } });
       return;
     }
+    // Story Mode: the campaign. Free Training: train, fight any boss, explore.
+    ui.button('story', 'Story Mode', x, y, bw, 120, { size: 50, color: '#b4560f', sub: g.storySummary(), onClick: () => g.startStory() });
+    y += 132;
     if (has) {
-      const s = g.saveSummary();
-      ui.button('continue', 'Continue', x, y, bw, 120, { size: 48, color: '#b4560f', sub: s, onClick: () => g.continueGame() });
-      y += 140;
-    }
-    if (has) {
+      ui.button('continue', 'Free Training', x, y, bw, 100, { size: 40, sub: g.saveSummary(), onClick: () => g.continueGame() });
+      y += 112;
       const hw = (bw - 20) / 2;
-      ui.button('look', 'Change Look', x, y, hw, 100, { size: 36, onClick: () => g.editLook() });
-      ui.button('new', 'New Warrior', x + hw + 20, y, hw, 100, { size: 36, onClick: () => { this.confirmNew = true; } });
-    } else ui.button('new', 'New Warrior', x, y, bw, 100, { size: 42, onClick: () => g.newGame() });
-    y += 120;
-    ui.button('help', 'How to Play', x, y, bw, 90, { size: 36, onClick: () => g.openGameMenu('help', true) });
-    y += 110;
-    ui.button('settings', 'Settings', x, y, bw, 90, { size: 36, onClick: () => g.openGameMenu('settings', true) });
-    y += 110;
+      ui.button('look', 'Change Look', x, y, hw, 90, { size: 34, onClick: () => g.editLook() });
+      ui.button('new', 'New Warrior', x + hw + 20, y, hw, 90, { size: 34, onClick: () => { this.confirmNew = true; } });
+    } else ui.button('new', 'Free Training', x, y, bw, 100, { size: 40, sub: 'Make a warrior and train', onClick: () => g.newGame() });
+    y += has ? 102 : 112;
+    const hw = (bw - 20) / 2;
+    ui.button('help', 'How to Play', x, y, hw, 90, { size: 34, onClick: () => g.openGameMenu('help', true) });
+    ui.button('settings', 'Settings', x + hw + 20, y, hw, 90, { size: 34, onClick: () => g.openGameMenu('settings', true) });
+    y += 100;
     ui.text(g.isXR ? 'Point and pull the trigger to select' : 'Click to select', ui.W / 2, Math.min(y + 30, ui.H - 30), { size: 28, align: 'center', color: COLORS.muted, weight: 'normal' });
   }
 }
@@ -192,13 +193,13 @@ export class GameMenu {
   draw(ui) {
     const g = this.game;
     ui.background();
-    const tabs = this.fromMain ? [['help', 'How to Play'], ['settings', 'Settings']] : [['status', 'Status'], ['training', 'Training'], ['boss', 'Bosses'], ['attacks', 'Attacks'], ['help', 'Help'], ['settings', 'Settings']];
+    const tabs = this.fromMain ? [['help', 'How to Play'], ['settings', 'Settings']] : [['story', 'Story'], ['status', 'Status'], ['training', 'Training'], ['boss', 'Bosses'], ['attacks', 'Attacks'], ['help', 'Help'], ['settings', 'Settings']];
     const tw = (ui.W - 80 - (tabs.length - 1) * 12) / tabs.length;
     tabs.forEach(([id, label], i) => ui.button(`tab-${id}`, label, 40 + i * (tw + 12), 30, tw, 80, {
       size: 34, selected: this.tab === id, onClick: () => { this.tab = id; },
     }));
     const area = { x: 40, y: 140, w: ui.W - 80, h: ui.H - 280 };
-    ({ status: () => this.drawStatus(ui, area), training: () => this.drawTraining(ui, area), boss: () => this.drawBoss(ui, area), attacks: () => this.drawAttacks(ui, area), help: () => this.drawHelp(ui, area), settings: () => this.drawSettings(ui, area) })[this.tab]();
+    ({ story: () => drawStory(ui, area, this), status: () => this.drawStatus(ui, area), training: () => this.drawTraining(ui, area), boss: () => this.drawBoss(ui, area), attacks: () => this.drawAttacks(ui, area), help: () => this.drawHelp(ui, area), settings: () => this.drawSettings(ui, area) })[this.tab]();
     // Footer
     const fy = ui.H - 120;
     if (this.fromMain) {
@@ -280,7 +281,8 @@ export class GameMenu {
     });
     y += Math.ceil(ACTIVITIES.length / 2) * 94 + 6;
     const cur = ACTIVITIES.find((x) => x.id === t.activity);
-    y = ui.wrap(cur.desc, a.x, y + 22, a.w, { size: 24, color: COLORS.muted });
+    if (cur) y = ui.wrap(cur.desc, a.x, y + 22, a.w, { size: 24, color: COLORS.muted });
+    else y = ui.wrap('Story Mode is on. Pick an activity to train freely (the story waits).', a.x, y + 22, a.w, { size: 24, color: COLORS.muted });
     y += 8;
     const row = (label, opts, onPick) => {
       ui.text(label, a.x, y + 50, { size: 28, color: COLORS.gold });

@@ -66,14 +66,15 @@ export class Banner {
       this.current.t -= dt;
       if (this.current.t <= 0) { this.current = null; this.panel.dirty = true; }
     }
-    if (!this.current && this.queue.length) {
+    // Story scenes and title cards: announcements wait until they're done.
+    if (!this.current && this.queue.length && !g.story?.modal) {
       this.current = this.queue.shift();
       this.current.t = this.current.duration;
       this.panel.dirty = true;
     }
     const want = this.current || this.prompt ? 1 : 0;
     this.opacity = damp(this.opacity, want, 10, dt);
-    const visible = this.opacity > 0.02 && g.state !== 'menu' && g.state !== 'creator' && g.state !== 'result' && !g.menuOpen;
+    const visible = this.opacity > 0.02 && g.state !== 'menu' && g.state !== 'creator' && g.state !== 'result' && !g.menuOpen && !g.story?.modal;
     if (visible && !this.panel.visible) {
       this.panel.show();
       g.player.flatForward(_f);

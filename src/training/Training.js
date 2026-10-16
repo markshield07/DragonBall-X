@@ -393,12 +393,13 @@ export class Training {
     this.sign.dirty = true;
   }
 
+  // 'none': nothing set up (story scenes on the grounds).
   setActivity(id, announce = true) {
-    if (!ACTIVITIES.some((a) => a.id === id)) id = 'punch';
+    if (id !== 'none' && !ACTIVITIES.some((a) => a.id === id)) id = 'punch';
     this.activity = id;
     this.sessionXp = 0;
     // On Zui the fight comes to you: no training props.
-    const zui = this.location === 'zui';
+    const zui = this.location === 'zui' || id === 'none';
     if (zui) this.sign.hide(); else if (this.enabled) this.sign.show();
     this.dummy.setVisible(!zui && (id === 'punch' || id === 'transform'));
     this.kiTargets.setActive(!zui && id === 'ki');
@@ -415,7 +416,7 @@ export class Training {
     this.sparring.setActive(id === 'spar');
     if (id === 'transform') this.transformGoal = { time: 0, transforms: 0 };
     this.sign.dirty = true;
-    if (announce) {
+    if (announce && id !== 'none') {
       const a = ACTIVITIES.find((x) => x.id === id);
       bus.emit('hud:message', { text: a.name, color: '#ffcc33' });
     }
@@ -546,6 +547,7 @@ export class Training {
 
   drawSign(ui) {
     const a = ACTIVITIES.find((x) => x.id === this.activity);
+    if (!a) return;
     const p = this.game.progress;
     ui.background();
     ui.text(a.name.toUpperCase(), 40, 80, { size: 50, color: COLORS.gold });

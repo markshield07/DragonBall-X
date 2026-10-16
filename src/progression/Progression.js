@@ -2,6 +2,7 @@ import { bus } from '../core/events.js';
 import { clamp } from '../core/math.js';
 import { FORMS, FORM_ORDER } from './forms.js';
 import { ATTACKS, ATTACK_ORDER } from './attacks.js';
+import { defaultStory, migrateStory } from '../story/StoryState.js';
 
 export const STAT_KEYS = ['strength', 'speed', 'ki', 'stamina'];
 export const STAT_LABELS = { strength: 'Strength', speed: 'Speed', ki: 'Ki', stamina: 'Stamina' };
@@ -85,6 +86,7 @@ export function defaultProgress() {
     playTime: 0,
     totalPunches: 0,
     bestPowerLevel: 1000,
+    story: defaultStory(),
   };
 }
 
@@ -98,6 +100,7 @@ export class Progression {
     this.data.timeChamber = { ...d.timeChamber, ...(this.data.timeChamber || {}) };
     this.data.trainingPrefs = { ...d.trainingPrefs, ...(this.data.trainingPrefs || {}) };
     this.data.daily = { ...d.daily, ...(this.data.daily || {}) };
+    this.data.story = migrateStory(this.data.story);
     // Chamber milestones used to be once-ever days; now they repeat each visit.
     if (this.data.timeChamber.milestones.includes(7)) this.data.timeChamber.milestones = [];
     this.recentXp = { strength: 0, speed: 0, ki: 0, stamina: 0 };

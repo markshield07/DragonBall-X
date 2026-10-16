@@ -108,8 +108,11 @@ export class Boss {
   }
 
   // Swap in a villain: rebuild the body from its look and reset stats.
-  setBoss(id) {
-    this.def = bossById(id);
+  // override: a story fight's scaled copy (power, health, moves); the
+  // boss menu never passes one, so menu fights are unchanged.
+  setBoss(id, override = null) {
+    this.def = override ? { ...bossById(id), ...override } : bossById(id);
+    this.story = !!override;
     const d = this.def;
     if (this.body) {
       this.group.remove(this.body);
